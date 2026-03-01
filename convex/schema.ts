@@ -93,6 +93,27 @@ export default defineSchema({
     .index("by_mentioned", ["mentionedAgentId", "delivered"])
     .index("by_createdAt", ["createdAt"]),
 
+  content: defineTable({
+    text: v.string(),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin"), v.literal("all")),
+    pillar: v.optional(v.string()),
+    scheduledTime: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("approved"),
+      v.literal("image_generating"),
+      v.literal("ready"),
+      v.literal("published")
+    ),
+    imageUrl: v.optional(v.string()),
+    agentId: v.optional(v.id("agents")),
+    approvedAt: v.optional(v.number()),
+    publishedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_platform", ["platform", "createdAt"]),
+
   memories: defineTable({
     agentId: v.id("agents"),
     content: v.string(),

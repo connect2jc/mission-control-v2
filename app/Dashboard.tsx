@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useState } from "react";
+import type { Id } from "../convex/_generated/dataModel";
 
 function StatusDot({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -303,6 +304,230 @@ function CronStatus() {
   );
 }
 
+function ContentQueue() {
+  const content = useQuery(api.content.list, { limit: 50 });
+  const agents = useQuery(api.agents.list);
+  const approve = useMutation(api.content.approve);
+  const publish = useMutation(api.content.publish);
+  const markGenerating = useMutation(api.content.markImageGenerating);
+  const setReady = useMutation(api.content.setImageReady);
+  const [filter, setFilter] = useState<string>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  if (!content || !agents) return <div className="text-[var(--text-secondary)]">Loading content...</div>;
+
+  const agentMap = new Map(agents.map((a) => [a._id, a]));
+
+  const statuses = ["all", "draft", "approved", "ready", "published"] as const;
+  const filtered = filter === "all" ? content : content.filter((c) => c.status === filter);
+
+  const counts: Record<string, number> = {};
+  for (const s of statuses) {
+    counts[s] = s === "all" ? content.length : content.filter((c) => c.status === s).length;
+  }
+
+  const statusStyle: Record<string, { color: string; bg: string }> = {
+    draft: { color: "var(--accent-yellow)", bg: "rgba(255,170,34,0.12)" },
+    approved: { color: "var(--accent-purple)", bg: "rgba(136,68,255,0.12)" },
+    image_generating: { color: "var(--accent-blue)", bg: "rgba(68,102,255,0.12)" },
+    ready: { color: "var(--accent-green)", bg: "rgba(34,204,136,0.12)" },
+    published: { color: "var(--text-secondary)", bg: "rgba(136,136,170,0.08)" },
+  };
+
+  const copyText = async (id: string, text: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleApprove = async (id: Id<"content">) => {
+    await approve({ id });
+  };
+
+  const handleGenerateImage = async (id: Id<"content">, text: string) => {
+    await markGenerating({ id });
+    // Placeholder: in production, Nano Banana Pro generates the image
+    // and calls setReady via convex-sync.sh or agent workflow.
+    // For now, simulate with a placeholder after a brief moment.
+    setTimeout(async () => {
+      await setReady({ id, imageUrl: `generated-${Date.now()}.png` });
+    }, 2000);
+  };
+
+  const handlePublish = async (id: Id<"content">) => {
+    await publish({ id });
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold">Content Queue</h2>
+          {counts.draft > 0 && (
+            <span
+              className="text-xs font-medium px-2 py-0.5 rounded-full"
+              style={{ color: "var(--accent-yellow)", background: "rgba(255,170,34,0.12)" }}
+            >
+              {counts.draft} draft{counts.draft !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-1">
+          {statuses.map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilter(s)}
+              className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                filter === s
+                  ? "bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white"
+                  : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
+              }`}
+            >
+              {s === "all" ? `All (${counts.all})` : `${s} (${counts[s] || 0})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {filtered.map((item) => {
+          const style = statusStyle[item.status] || statusStyle.draft;
+          const agent = item.agentId ? agentMap.get(item.agentId) : null;
+          const isExpanded = expandedId === item._id;
+
+          return (
+            <div
+              key={item._id}
+              className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg overflow-hidden hover:bg-[var(--bg-hover)] transition-colors"
+            >
+              {/* Header row — always visible */}
+              <div
+                className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+                onClick={() => setExpandedId(isExpanded ? null : item._id)}
+              >
+                {/* Status pill */}
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+                  style={{ color: style.color, background: style.bg }}
+                >
+                  {item.status === "image_generating" ? "generating..." : item.status}
+                </span>
+
+                {/* Preview text */}
+                <span className="text-sm flex-1 min-w-0 truncate">
+                  {item.text.split("\n")[0]}
+                </span>
+
+                {/* Meta */}
+                {item.pillar && (
+                  <span className="text-[10px] text-[var(--text-secondary)] flex-shrink-0">{item.pillar}</span>
+                )}
+                {item.scheduledTime && (
+                  <span className="text-[10px] text-[var(--text-secondary)] flex-shrink-0">{item.scheduledTime}</span>
+                )}
+                {agent && (
+                  <span className="text-xs flex-shrink-0">{agent.emoji}</span>
+                )}
+
+                {/* Expand arrow */}
+                <svg
+                  width="12" height="12" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                  className={`flex-shrink-0 text-[var(--text-secondary)] transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+
+              {/* Expanded content */}
+              {isExpanded && (
+                <div className="px-4 pb-4 border-t border-[var(--border)]">
+                  {/* Full tweet text */}
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap py-3 text-[var(--text-secondary)]">
+                    {item.text}
+                  </div>
+
+                  {/* Image preview if exists */}
+                  {item.imageUrl && (
+                    <div className="mb-3 p-2 bg-[var(--bg-primary)] rounded-lg border border-[var(--border)]">
+                      <div className="text-[10px] text-[var(--accent-green)] mb-1">Image generated</div>
+                      <div className="text-xs text-[var(--text-secondary)]">{item.imageUrl}</div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-[var(--text-secondary)]">
+                      {item.text.length} chars · {item.platform}
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      {/* Copy */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); copyText(item._id, item.text); }}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)] transition-colors"
+                      >
+                        {copiedId === item._id ? "Copied" : "Copy"}
+                      </button>
+
+                      {/* Approve — only for drafts */}
+                      {item.status === "draft" && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleApprove(item._id as Id<"content">); }}
+                          className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors"
+                          style={{ background: "rgba(136,68,255,0.15)", color: "var(--accent-purple)" }}
+                        >
+                          Approve
+                        </button>
+                      )}
+
+                      {/* Generate Image — only for approved */}
+                      {item.status === "approved" && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleGenerateImage(item._id as Id<"content">, item.text); }}
+                          className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors"
+                          style={{ background: "rgba(68,102,255,0.15)", color: "var(--accent-blue)" }}
+                        >
+                          Generate Image
+                        </button>
+                      )}
+
+                      {/* Publish — for ready or approved */}
+                      {(item.status === "ready" || item.status === "approved") && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handlePublish(item._id as Id<"content">); }}
+                          className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors"
+                          style={{ background: "rgba(34,204,136,0.15)", color: "var(--accent-green)" }}
+                        >
+                          Mark Published
+                        </button>
+                      )}
+
+                      {/* Image generating spinner */}
+                      {item.status === "image_generating" && (
+                        <span className="text-xs text-[var(--accent-blue)] animate-pulse">
+                          Generating image...
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {filtered.length === 0 && (
+          <div className="text-center py-8 text-[var(--text-secondary)]">
+            <div className="text-sm">No content in this view</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   return (
     <div className="min-h-screen p-4 max-w-[1600px] mx-auto">
@@ -337,6 +562,11 @@ export default function Dashboard() {
           <BudgetWidget />
           <CronStatus />
         </div>
+      </div>
+
+      {/* Content Queue */}
+      <div className="mb-6">
+        <ContentQueue />
       </div>
 
       {/* Bottom Grid */}

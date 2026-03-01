@@ -10,11 +10,13 @@
 
 import type * as activities from "../activities.js";
 import type * as agents from "../agents.js";
+import type * as content from "../content.js";
 import type * as documents from "../documents.js";
 import type * as memories from "../memories.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
 import type * as seed from "../seed.js";
+import type * as seedContent from "../seedContent.js";
 import type * as tasks from "../tasks.js";
 
 import type {
@@ -26,11 +28,13 @@ import type {
 declare const fullApi: ApiFromModules<{
   activities: typeof activities;
   agents: typeof agents;
+  content: typeof content;
   documents: typeof documents;
   memories: typeof memories;
   messages: typeof messages;
   notifications: typeof notifications;
   seed: typeof seed;
+  seedContent: typeof seedContent;
   tasks: typeof tasks;
 }>;
 
