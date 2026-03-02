@@ -56,6 +56,34 @@ function HighlightMentions({ text }: { text: string }) {
   );
 }
 
+// ─── Theme Toggle ───────────────────────────────────────────────────
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    const saved = document.documentElement.getAttribute("data-theme") as "light" | "dark";
+    setTheme(saved || "light");
+  }, []);
+
+  const toggle = () => {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("mc-theme", next);
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      className="p-2 rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
+      title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+    >
+      <span className="text-lg">{theme === "light" ? "🌙" : "☀️"}</span>
+    </button>
+  );
+}
+
 // ─── Notification Bell ──────────────────────────────────────────────
 
 function NotificationBell() {
@@ -131,7 +159,10 @@ function Sidebar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void
           <div className="text-sm font-bold leading-tight">Mission Control</div>
           <div className="text-[10px] text-[var(--text-secondary)]">OpenClaw</div>
         </div>
-        <NotificationBell />
+        <div className="flex items-center gap-0.5">
+          <ThemeToggle />
+          <NotificationBell />
+        </div>
       </div>
 
       {/* Nav */}
@@ -180,7 +211,10 @@ function MobileNav({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => vo
           <span className="text-lg">🛰️</span>
           <span className="text-sm font-bold">Mission Control</span>
         </div>
-        <NotificationBell />
+        <div className="flex items-center gap-0.5">
+          <ThemeToggle />
+          <NotificationBell />
+        </div>
       </div>
       <div className="flex items-center gap-1 overflow-x-auto px-2 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)] sticky top-0 z-10">
         {TABS.map((tab) => (
@@ -257,19 +291,19 @@ function TaskDetailModal({
   };
 
   const statusColors: Record<string, string> = {
-    todo: "bg-blue-500/20 text-blue-300",
-    in_progress: "bg-yellow-500/20 text-yellow-300",
-    review: "bg-purple-500/20 text-purple-300",
-    done: "bg-green-500/20 text-green-300",
-    blocked: "bg-red-500/20 text-red-300",
-    backlog: "bg-gray-500/20 text-gray-300",
+    todo: "bg-blue-500/15 text-blue-600",
+    in_progress: "bg-yellow-500/15 text-yellow-700",
+    review: "bg-purple-500/15 text-purple-600",
+    done: "bg-green-500/15 text-green-600",
+    blocked: "bg-red-500/15 text-red-600",
+    backlog: "bg-gray-500/15 text-gray-600",
   };
 
   const priorityColors: Record<string, string> = {
-    critical: "bg-red-500/20 text-red-300",
-    high: "bg-orange-500/20 text-orange-300",
-    medium: "bg-blue-500/20 text-blue-300",
-    low: "bg-gray-500/20 text-gray-300",
+    critical: "bg-red-500/15 text-red-600",
+    high: "bg-orange-500/15 text-orange-600",
+    medium: "bg-blue-500/15 text-blue-600",
+    low: "bg-gray-500/15 text-gray-600",
   };
 
   return (
@@ -320,8 +354,8 @@ function TaskDetailModal({
           {/* Blocker */}
           {task.blocker && (
             <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-              <div className="text-xs font-semibold text-red-300 mb-0.5">Blocker</div>
-              <div className="text-sm text-red-200">{task.blocker}</div>
+              <div className="text-xs font-semibold text-[var(--accent-red)] mb-0.5">Blocker</div>
+              <div className="text-sm text-[var(--accent-red)]/80">{task.blocker}</div>
             </div>
           )}
 
@@ -345,7 +379,7 @@ function TaskDetailModal({
                     <span key={id} className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--accent-blue)]/10 text-[var(--accent-blue)] rounded-full text-xs">
                       {agent.emoji} {agent.name}
                       {showAssign && (
-                        <button onClick={() => handleAssign(id)} className="ml-0.5 hover:text-red-300">x</button>
+                        <button onClick={() => handleAssign(id)} className="ml-0.5 hover:text-[var(--accent-red)]">x</button>
                       )}
                     </span>
                   );
@@ -613,11 +647,11 @@ function TaskBoard() {
   const columnColors: Record<string, string> = {
     todo: "border-[var(--accent-blue)]", in_progress: "border-[var(--accent-yellow)]",
     review: "border-[var(--accent-purple)]", done: "border-[var(--accent-green)]",
-    blocked: "border-[var(--accent-red)]", backlog: "border-gray-600",
+    blocked: "border-[var(--accent-red)]", backlog: "border-[var(--text-secondary)]",
   };
   const priorityBadge: Record<string, string> = {
-    critical: "bg-red-500/20 text-red-300", high: "bg-orange-500/20 text-orange-300",
-    medium: "bg-blue-500/20 text-blue-300", low: "bg-gray-500/20 text-gray-300",
+    critical: "bg-red-500/15 text-red-600", high: "bg-orange-500/15 text-orange-600",
+    medium: "bg-blue-500/15 text-blue-600", low: "bg-gray-500/15 text-gray-600",
   };
 
   const categories = ["all", ...new Set(tasks.map((t) => t.category).filter(Boolean))];
@@ -674,7 +708,7 @@ function TaskBoard() {
                         })}
                       </div>
                     )}
-                    {task.blocker && <div className="mt-1 text-[10px] text-red-300">Blocked: {task.blocker}</div>}
+                    {task.blocker && <div className="mt-1 text-[10px] text-[var(--accent-red)]">Blocked: {task.blocker}</div>}
                   </div>
                 ))}
               </div>
@@ -972,12 +1006,12 @@ function ProductsTab() {
   );
 
   const statusColors: Record<string, string> = {
-    todo: "bg-blue-500/20 text-blue-300",
-    in_progress: "bg-yellow-500/20 text-yellow-300",
-    review: "bg-purple-500/20 text-purple-300",
-    done: "bg-green-500/20 text-green-300",
-    blocked: "bg-red-500/20 text-red-300",
-    backlog: "bg-gray-500/20 text-gray-300",
+    todo: "bg-blue-500/15 text-blue-600",
+    in_progress: "bg-yellow-500/15 text-yellow-700",
+    review: "bg-purple-500/15 text-purple-600",
+    done: "bg-green-500/15 text-green-600",
+    blocked: "bg-red-500/15 text-red-600",
+    backlog: "bg-gray-500/15 text-gray-600",
   };
 
   return (
@@ -1026,7 +1060,7 @@ function ProductsTab() {
                 </div>
               </div>
               {task.blocker && (
-                <div className="mt-2 text-xs text-red-300 bg-red-500/10 rounded px-2 py-1">
+                <div className="mt-2 text-xs text-[var(--accent-red)] bg-red-500/10 rounded px-2 py-1">
                   Blocker: {task.blocker}
                 </div>
               )}
@@ -1104,10 +1138,10 @@ function MemoriesTab() {
   });
 
   const categoryColors: Record<string, string> = {
-    decision: "bg-purple-500/20 text-purple-300", lesson: "bg-yellow-500/20 text-yellow-300",
-    preference: "bg-blue-500/20 text-blue-300", task_outcome: "bg-green-500/20 text-green-300",
-    insight: "bg-cyan-500/20 text-cyan-300", conversation: "bg-gray-500/20 text-gray-300",
-    other: "bg-gray-500/20 text-gray-300",
+    decision: "bg-purple-500/15 text-purple-600", lesson: "bg-yellow-500/15 text-yellow-700",
+    preference: "bg-blue-500/15 text-blue-600", task_outcome: "bg-green-500/15 text-green-600",
+    insight: "bg-cyan-500/15 text-cyan-600", conversation: "bg-gray-500/15 text-gray-600",
+    other: "bg-gray-500/15 text-gray-600",
   };
 
   return (
@@ -1140,7 +1174,7 @@ function MemoriesTab() {
               <div className="flex items-center gap-1.5 mb-1.5">
                 {agent && <span className="text-xs capitalize">{agent.emoji} {agent.name}</span>}
                 <span className={`px-1.5 py-0.5 text-[10px] rounded ${categoryColors[mem.category] || categoryColors.other}`}>{mem.category}</span>
-                {Number(mem.importance) >= 8 && <span className="text-[10px] text-red-300">important</span>}
+                {Number(mem.importance) >= 8 && <span className="text-[10px] text-[var(--accent-red)]">important</span>}
                 <span className="flex-1" />
                 <TimeAgo timestamp={mem.createdAt} />
               </div>

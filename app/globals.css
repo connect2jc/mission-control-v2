@@ -1,7 +1,25 @@
 @import "tailwindcss";
 @source "./**/*.tsx";
 
+/* Light mode (default) */
 :root {
+  --bg-primary: #f5f5f7;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f0f0f5;
+  --border: #e0e0e8;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b6b80;
+  --accent-blue: #4466ff;
+  --accent-green: #16a870;
+  --accent-yellow: #d4890a;
+  --accent-red: #e03355;
+  --accent-purple: #7744ee;
+  --shadow: rgba(0, 0, 0, 0.06);
+}
+
+/* Dark mode */
+[data-theme="dark"] {
   --bg-primary: #0a0a0f;
   --bg-secondary: #12121a;
   --bg-card: #1a1a2e;
@@ -14,6 +32,7 @@
   --accent-yellow: #ffaa22;
   --accent-red: #ff4466;
   --accent-purple: #8844ff;
+  --shadow: rgba(0, 0, 0, 0.3);
 }
 
 body {
