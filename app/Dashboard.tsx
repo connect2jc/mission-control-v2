@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useState } from "react";
 import type { Id } from "../convex/_generated/dataModel";
@@ -309,8 +309,7 @@ function ContentQueue() {
   const agents = useQuery(api.agents.list);
   const approve = useMutation(api.content.approve);
   const publish = useMutation(api.content.publish);
-  const markGenerating = useMutation(api.content.markImageGenerating);
-  const setReady = useMutation(api.content.setImageReady);
+  const generateImageAction = useAction(api.content.generateImage);
   const [filter, setFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -345,14 +344,12 @@ function ContentQueue() {
     await approve({ id });
   };
 
-  const handleGenerateImage = async (id: Id<"content">, text: string) => {
-    await markGenerating({ id });
-    // Placeholder: in production, Nano Banana Pro generates the image
-    // and calls setReady via convex-sync.sh or agent workflow.
-    // For now, simulate with a placeholder after a brief moment.
-    setTimeout(async () => {
-      await setReady({ id, imageUrl: `generated-${Date.now()}.png` });
-    }, 2000);
+  const handleGenerateImage = async (id: Id<"content">, text: string, pillar?: string) => {
+    try {
+      await generateImageAction({ id, text, pillar });
+    } catch (e) {
+      console.error("Image generation failed:", e);
+    }
   };
 
   const handlePublish = async (id: Id<"content">) => {
@@ -449,10 +446,20 @@ function ContentQueue() {
                   </div>
 
                   {/* Image preview if exists */}
-                  {item.imageUrl && (
+                  {item.imageUrl && !item.imageUrl.startsWith("error:") && (
                     <div className="mb-3 p-2 bg-[var(--bg-primary)] rounded-lg border border-[var(--border)]">
                       <div className="text-[10px] text-[var(--accent-green)] mb-1">Image generated</div>
-                      <div className="text-xs text-[var(--text-secondary)]">{item.imageUrl}</div>
+                      <img
+                        src={item.imageUrl}
+                        alt="Generated image"
+                        className="w-full max-h-64 object-contain rounded-md mt-1"
+                      />
+                    </div>
+                  )}
+                  {item.imageUrl?.startsWith("error:") && (
+                    <div className="mb-3 p-2 bg-[var(--bg-primary)] rounded-lg border border-[var(--accent-red)]">
+                      <div className="text-[10px] text-[var(--accent-red)]">Generation failed — {item.imageUrl.slice(7).slice(0, 80)}</div>
+                      <div className="text-[10px] text-[var(--text-secondary)] mt-1">Click "Generate Image" to retry</div>
                     </div>
                   )}
 
@@ -485,7 +492,7 @@ function ContentQueue() {
                       {/* Generate Image — only for approved */}
                       {item.status === "approved" && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleGenerateImage(item._id as Id<"content">, item.text); }}
+                          onClick={(e) => { e.stopPropagation(); handleGenerateImage(item._id as Id<"content">, item.text, item.pillar); }}
                           className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors"
                           style={{ background: "rgba(68,102,255,0.15)", color: "var(--accent-blue)" }}
                         >

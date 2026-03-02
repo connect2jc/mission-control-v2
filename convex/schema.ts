@@ -106,6 +106,7 @@ export default defineSchema({
       v.literal("published")
     ),
     imageUrl: v.optional(v.string()),
+    imageStorageId: v.optional(v.id("_storage")),
     agentId: v.optional(v.id("agents")),
     approvedAt: v.optional(v.number()),
     publishedAt: v.optional(v.number()),

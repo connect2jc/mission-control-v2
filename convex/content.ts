@@ -1,5 +1,6 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, action } from "./_generated/server";
 import { v } from "convex/values";
+import { api } from "./_generated/api";
 
 export const list = query({
   args: { limit: v.optional(v.number()) },
@@ -57,11 +58,101 @@ export const markImageGenerating = mutation({
 });
 
 export const setImageReady = mutation({
-  args: { id: v.id("content"), imageUrl: v.string() },
-  handler: async (ctx, { id, imageUrl }) => {
+  args: {
+    id: v.id("content"),
+    imageUrl: v.string(),
+    imageStorageId: v.optional(v.id("_storage")),
+  },
+  handler: async (ctx, { id, imageUrl, imageStorageId }) => {
     await ctx.db.patch(id, {
       status: "ready",
       imageUrl,
+      ...(imageStorageId ? { imageStorageId } : {}),
+    });
+  },
+});
+
+export const getImageUrl = query({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, { storageId }) => {
+    return await ctx.storage.getUrl(storageId);
+  },
+});
+
+export const generateImage = action({
+  args: { id: v.id("content"), text: v.string(), pillar: v.optional(v.string()) },
+  handler: async (ctx, { id, text, pillar }) => {
+    // Mark as generating
+    await ctx.runMutation(api.content.markImageGenerating, { id });
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY not set");
+
+    // Build a prompt for a compelling social media image
+    const prompt = `Create a visually striking, modern social media image for this tweet.
+Style: Clean, minimal, dark background with bold typography or abstract visuals.
+Category: ${pillar || "general"}.
+Tweet: "${text.slice(0, 300)}"
+Do NOT include any text in the image. Make it abstract, atmospheric, and eye-catching.`;
+
+    // Call Gemini image generation API (same format as Nano Banana Pro)
+    const model = "gemini-2.0-flash-exp-image-generation";
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"],
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const err = await response.text();
+      const parsed = (() => { try { return JSON.parse(err); } catch { return null; } })();
+      const msg = parsed?.error?.message || err.slice(0, 150);
+      // Revert to approved so user can retry
+      await ctx.runMutation(api.content.revertToApproved, { id, error: msg });
+      return;
+    }
+
+    const data = await response.json();
+
+    // Extract base64 image from response
+    let imageBase64: string | null = null;
+    let mimeType = "image/png";
+
+    const candidates = data.candidates || [];
+    for (const candidate of candidates) {
+      for (const part of candidate.content?.parts || []) {
+        if (part.inlineData) {
+          imageBase64 = part.inlineData.data;
+          mimeType = part.inlineData.mimeType || "image/png";
+          break;
+        }
+      }
+      if (imageBase64) break;
+    }
+
+    if (!imageBase64) {
+      await ctx.runMutation(api.content.revertToApproved, { id, error: "No image in Gemini response" });
+      return;
+    }
+
+    // Convert base64 to binary and store in Convex
+    const binary = Uint8Array.from(atob(imageBase64), (c) => c.charCodeAt(0));
+    const blob = new Blob([binary], { type: mimeType });
+    const storageId = await ctx.storage.store(blob);
+    const url = await ctx.storage.getUrl(storageId);
+
+    await ctx.runMutation(api.content.setImageReady, {
+      id,
+      imageUrl: url || `storage:${storageId}`,
+      imageStorageId: storageId,
     });
   },
 });
@@ -72,6 +163,16 @@ export const publish = mutation({
     await ctx.db.patch(id, {
       status: "published",
       publishedAt: Date.now(),
+    });
+  },
+});
+
+export const revertToApproved = mutation({
+  args: { id: v.id("content"), error: v.string() },
+  handler: async (ctx, { id, error }) => {
+    await ctx.db.patch(id, {
+      status: "approved",
+      imageUrl: `error: ${error}`,
     });
   },
 });
