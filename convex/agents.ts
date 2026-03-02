@@ -49,6 +49,19 @@ export const updateStatus = mutation({
   },
 });
 
+export const setCurrentTask = mutation({
+  args: {
+    id: v.id("agents"),
+    currentTask: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      currentTask: args.currentTask,
+      lastHeartbeat: Date.now(),
+    });
+  },
+});
+
 export const heartbeat = mutation({
   args: { id: v.id("agents") },
   handler: async (ctx, args) => {

@@ -31,7 +31,7 @@ export const create = mutation({
       v.literal("task_created"), v.literal("task_updated"), v.literal("task_completed"),
       v.literal("message_sent"), v.literal("agent_online"), v.literal("agent_offline"),
       v.literal("heartbeat"), v.literal("memory_saved"), v.literal("standup"),
-      v.literal("consolidation"), v.literal("custom")
+      v.literal("consolidation"), v.literal("custom"), v.literal("comment")
     ),
     agentId: v.optional(v.id("agents")),
     message: v.string(),

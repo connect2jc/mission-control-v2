@@ -12,9 +12,19 @@ export default defineSchema({
     lastHeartbeat: v.optional(v.number()),
     model: v.optional(v.string()),
     channel: v.optional(v.string()),
+    currentTask: v.optional(v.string()),
   })
     .index("by_name", ["name"])
     .index("by_status", ["status"]),
+
+  comments: defineTable({
+    taskId: v.id("tasks"),
+    agentId: v.id("agents"),
+    message: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_task", ["taskId", "createdAt"])
+    .index("by_agent", ["agentId", "createdAt"]),
 
   tasks: defineTable({
     title: v.string(),
@@ -60,7 +70,8 @@ export default defineSchema({
       v.literal("memory_saved"),
       v.literal("standup"),
       v.literal("consolidation"),
-      v.literal("custom")
+      v.literal("custom"),
+      v.literal("comment")
     ),
     agentId: v.optional(v.id("agents")),
     message: v.string(),
