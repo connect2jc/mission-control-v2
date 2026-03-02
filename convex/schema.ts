@@ -126,6 +126,17 @@ export default defineSchema({
     .index("by_status", ["status", "createdAt"])
     .index("by_platform", ["platform", "createdAt"]),
 
+  settings: defineTable({
+    key: v.string(),
+    value: v.string(),
+  }).index("by_key", ["key"]),
+
+  sessions: defineTable({
+    token: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  }).index("by_token", ["token"]),
+
   memories: defineTable({
     agentId: v.id("agents"),
     content: v.string(),
