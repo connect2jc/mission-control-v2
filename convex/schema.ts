@@ -139,6 +139,37 @@ export default defineSchema({
     expiresAt: v.number(),
   }).index("by_token", ["token"]),
 
+  twitter_drafts: defineTable({
+    content: v.string(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("posted")
+    ),
+    feedback: v.optional(v.string()),
+    feedbackAt: v.optional(v.number()),
+    suggestedTime: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_createdAt", ["createdAt"]),
+
+  twitter_feedback: defineTable({
+    draftId: v.optional(v.id("twitter_drafts")),
+    feedback: v.string(),
+    category: v.union(
+      v.literal("tone"),
+      v.literal("content"),
+      v.literal("structure"),
+      v.literal("general")
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_category", ["category", "createdAt"])
+    .index("by_draft", ["draftId", "createdAt"])
+    .index("by_createdAt", ["createdAt"]),
+
   memories: defineTable({
     agentId: v.id("agents"),
     content: v.string(),
