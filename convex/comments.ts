@@ -12,6 +12,7 @@ export const getByTask = query({
   },
 });
 
+// Used by agents via API — requires agentId
 export const add = mutation({
   args: {
     taskId: v.id("tasks"),
@@ -19,7 +20,6 @@ export const add = mutation({
     message: v.string(),
   },
   handler: async (ctx, args) => {
-    // Insert the comment
     const commentId = await ctx.db.insert("comments", {
       taskId: args.taskId,
       agentId: args.agentId,
@@ -27,11 +27,9 @@ export const add = mutation({
       createdAt: Date.now(),
     });
 
-    // Get agent and task info for activity feed + mentions
     const agent = await ctx.db.get(args.agentId);
     const task = await ctx.db.get(args.taskId);
 
-    // Post to activity feed
     if (agent && task) {
       await ctx.db.insert("activities", {
         type: "comment",
@@ -41,7 +39,6 @@ export const add = mutation({
       });
     }
 
-    // Parse @mentions and create notifications
     const mentions = args.message.match(/@(\w+)/g);
     if (mentions && agent) {
       const mentionedNames = mentions.map((m) => m.slice(1).toLowerCase());
@@ -61,6 +58,33 @@ export const add = mutation({
           });
         }
       }
+    }
+
+    return commentId;
+  },
+});
+
+// Used by dashboard owner — no agent impersonation
+export const addAsOwner = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    message: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const commentId = await ctx.db.insert("comments", {
+      taskId: args.taskId,
+      authorName: "JC",
+      message: args.message,
+      createdAt: Date.now(),
+    });
+
+    const task = await ctx.db.get(args.taskId);
+    if (task) {
+      await ctx.db.insert("activities", {
+        type: "comment",
+        message: `👤 JC commented on "${task.title}": ${args.message.slice(0, 100)}`,
+        createdAt: Date.now(),
+      });
     }
 
     return commentId;

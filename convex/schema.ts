@@ -19,7 +19,8 @@ export default defineSchema({
 
   comments: defineTable({
     taskId: v.id("tasks"),
-    agentId: v.id("agents"),
+    agentId: v.optional(v.id("agents")),
+    authorName: v.optional(v.string()),
     message: v.string(),
     createdAt: v.number(),
   })
@@ -51,7 +52,8 @@ export default defineSchema({
 
   messages: defineTable({
     taskId: v.optional(v.id("tasks")),
-    fromAgentId: v.id("agents"),
+    fromAgentId: v.optional(v.id("agents")),
+    authorName: v.optional(v.string()),
     content: v.string(),
     createdAt: v.number(),
   })

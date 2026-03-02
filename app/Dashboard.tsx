@@ -226,10 +226,9 @@ function TaskDetailModal({
   onClose: () => void;
 }) {
   const comments = useQuery(api.comments.getByTask, { taskId: task._id });
-  const addComment = useMutation(api.comments.add);
+  const addComment = useMutation(api.comments.addAsOwner);
   const updateTask = useMutation(api.tasks.update);
   const [newComment, setNewComment] = useState("");
-  const [selectedAgent, setSelectedAgent] = useState("");
   const [showAssign, setShowAssign] = useState(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
@@ -240,10 +239,9 @@ function TaskDetailModal({
   }, [comments?.length]);
 
   const handleAddComment = async () => {
-    if (!newComment.trim() || !selectedAgent) return;
+    if (!newComment.trim()) return;
     await addComment({
       taskId: task._id,
-      agentId: selectedAgent as Id<"agents">,
       message: newComment.trim(),
     });
     setNewComment("");
@@ -383,15 +381,14 @@ function TaskDetailModal({
                 <div className="text-xs text-[var(--text-secondary)] py-3 text-center">No comments yet</div>
               ) : (
                 comments.map((c) => {
-                  const agent = agentMap.get(c.agentId);
+                  const agent = c.agentId ? agentMap.get(c.agentId) : null;
+                  const displayName = agent ? `${agent.emoji} ${agent.name}` : (c.authorName ? `👤 ${c.authorName}` : "Unknown");
                   return (
                     <div key={c._id} className="bg-[var(--bg-primary)] rounded-lg px-3 py-2">
                       <div className="flex items-center gap-1.5 mb-1">
-                        {agent && (
-                          <span className="text-xs font-medium text-[var(--accent-blue)]">
-                            {agent.emoji} {agent.name}
-                          </span>
-                        )}
+                        <span className="text-xs font-medium text-[var(--accent-blue)]">
+                          {displayName}
+                        </span>
                         <TimeAgo timestamp={c.createdAt} />
                       </div>
                       <div className="text-sm text-[var(--text-primary)]">
@@ -408,18 +405,9 @@ function TaskDetailModal({
 
         {/* Add Comment */}
         <div className="border-t border-[var(--border)] p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs text-[var(--text-secondary)]">Comment as:</span>
-            <select
-              value={selectedAgent}
-              onChange={(e) => setSelectedAgent(e.target.value)}
-              className="text-xs bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)]"
-            >
-              <option value="">Select agent...</option>
-              {agents.map((a) => (
-                <option key={a._id} value={a._id}>{a.emoji} {a.name}</option>
-              ))}
-            </select>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-xs text-[var(--text-secondary)]">Commenting as</span>
+            <span className="text-xs font-medium text-[var(--accent-blue)]">👤 JC</span>
           </div>
           <div className="flex gap-2">
             <input
@@ -432,7 +420,7 @@ function TaskDetailModal({
             />
             <button
               onClick={handleAddComment}
-              disabled={!newComment.trim() || !selectedAgent}
+              disabled={!newComment.trim()}
               className="px-4 py-2 text-sm font-medium bg-[var(--accent-blue)] text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Send
@@ -713,9 +701,8 @@ function ChatTab() {
   const messages = useQuery(api.messages.listRecent, { limit: 100 });
   const agents = useQuery(api.agents.list);
   const tasks = useQuery(api.tasks.list);
-  const createMessage = useMutation(api.messages.create);
+  const createMessage = useMutation(api.messages.createAsOwner);
   const [newMsg, setNewMsg] = useState("");
-  const [selectedAgent, setSelectedAgent] = useState("");
   const [selectedTask, setSelectedTask] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -730,9 +717,8 @@ function ChatTab() {
   }, [messages?.length]);
 
   const handleSend = async () => {
-    if (!newMsg.trim() || !selectedAgent) return;
+    if (!newMsg.trim()) return;
     await createMessage({
-      fromAgentId: selectedAgent as Id<"agents">,
       content: newMsg.trim(),
       ...(selectedTask ? { taskId: selectedTask as Id<"tasks"> } : {}),
     });
@@ -758,14 +744,16 @@ function ChatTab() {
           </div>
         ) : (
           sorted.map((msg) => {
-            const agent = agentMap.get(msg.fromAgentId);
+            const agent = msg.fromAgentId ? agentMap.get(msg.fromAgentId) : null;
             const task = msg.taskId ? taskMap.get(msg.taskId) : null;
+            const displayName = agent ? agent.name : (msg.authorName ?? "unknown");
+            const displayEmoji = agent ? agent.emoji : "👤";
             return (
               <div key={msg._id} className="flex gap-3 p-2 rounded-lg hover:bg-[var(--bg-hover)] transition-colors">
-                <span className="text-xl flex-shrink-0 mt-0.5">{agent?.emoji ?? "❓"}</span>
+                <span className="text-xl flex-shrink-0 mt-0.5">{displayEmoji}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-sm font-medium text-[var(--accent-blue)] capitalize">{agent?.name ?? "unknown"}</span>
+                    <span className="text-sm font-medium text-[var(--accent-blue)] capitalize">{displayName}</span>
                     <TimeAgo timestamp={msg.createdAt} />
                     {task && (
                       <span className="text-[10px] px-1.5 py-0.5 bg-[var(--bg-primary)] border border-[var(--border)] rounded text-[var(--text-secondary)] truncate max-w-[150px]">
@@ -787,16 +775,8 @@ function ChatTab() {
       {/* Compose */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3">
         <div className="flex items-center gap-2 mb-2">
-          <select
-            value={selectedAgent}
-            onChange={(e) => setSelectedAgent(e.target.value)}
-            className="text-xs bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)]"
-          >
-            <option value="">Send as...</option>
-            {agents.map((a) => (
-              <option key={a._id} value={a._id}>{a.emoji} {a.name}</option>
-            ))}
-          </select>
+          <span className="text-xs text-[var(--text-secondary)]">Sending as</span>
+          <span className="text-xs font-medium text-[var(--accent-blue)]">👤 JC</span>
           <select
             value={selectedTask}
             onChange={(e) => setSelectedTask(e.target.value)}
@@ -819,7 +799,7 @@ function ChatTab() {
           />
           <button
             onClick={handleSend}
-            disabled={!newMsg.trim() || !selectedAgent}
+            disabled={!newMsg.trim()}
             className="px-4 py-2 text-sm font-medium bg-[var(--accent-blue)] text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Send

@@ -23,6 +23,7 @@ export const listRecent = query({
   },
 });
 
+// Used by agents via API
 export const create = mutation({
   args: {
     taskId: v.optional(v.id("tasks")),
@@ -32,6 +33,21 @@ export const create = mutation({
   handler: async (ctx, args) => {
     return await ctx.db.insert("messages", {
       ...args,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+// Used by dashboard owner — no agent impersonation
+export const createAsOwner = mutation({
+  args: {
+    taskId: v.optional(v.id("tasks")),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("messages", {
+      ...args,
+      authorName: "JC",
       createdAt: Date.now(),
     });
   },
