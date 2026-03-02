@@ -2,16 +2,16 @@
 
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { Id } from "../convex/_generated/dataModel";
 
-type Tab = "overview" | "agents" | "tasks" | "content" | "products" | "activity" | "memories";
-type Comment = { _id: string; taskId: string; agentId: string; message: string; createdAt: number };
+type Tab = "overview" | "agents" | "tasks" | "chat" | "content" | "products" | "activity" | "memories";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "📊" },
   { id: "agents", label: "Agents", icon: "🤖" },
   { id: "tasks", label: "Tasks", icon: "📋" },
+  { id: "chat", label: "Chat", icon: "💬" },
   { id: "content", label: "Content", icon: "✍️" },
   { id: "products", label: "Products", icon: "🚀" },
   { id: "activity", label: "Activity", icon: "⚡" },
@@ -41,6 +41,84 @@ function TimeAgo({ timestamp }: { timestamp: number }) {
   return <span className="text-[var(--text-secondary)] text-xs">{days}d ago</span>;
 }
 
+function HighlightMentions({ text }: { text: string }) {
+  const parts = text.split(/(@\w+)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("@") ? (
+          <span key={i} className="text-[var(--accent-blue)] font-medium">{part}</span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
+// ─── Notification Bell ──────────────────────────────────────────────
+
+function NotificationBell() {
+  const notifications = useQuery(api.notifications.listRecent, { limit: 20 });
+  const agents = useQuery(api.agents.list);
+  const [open, setOpen] = useState(false);
+
+  const agentMap = new Map(agents?.map((a) => [a._id, a]) ?? []);
+  const unreadCount = notifications?.filter((n) => !n.delivered).length ?? 0;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="relative p-2 rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
+      >
+        <span className="text-lg">🔔</span>
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 w-80 max-h-96 overflow-y-auto bg-[var(--bg-card)] border border-[var(--border)] rounded-lg shadow-xl z-40">
+            <div className="p-3 border-b border-[var(--border)] flex items-center justify-between">
+              <span className="text-sm font-semibold">Notifications</span>
+              {unreadCount > 0 && (
+                <span className="text-[10px] text-[var(--accent-blue)]">{unreadCount} unread</span>
+              )}
+            </div>
+            {(!notifications || notifications.length === 0) ? (
+              <div className="p-4 text-center text-xs text-[var(--text-secondary)]">No notifications yet</div>
+            ) : (
+              <div className="divide-y divide-[var(--border)]">
+                {notifications.map((n) => {
+                  const from = agentMap.get(n.fromAgentId);
+                  return (
+                    <div
+                      key={n._id}
+                      className={`p-3 text-xs hover:bg-[var(--bg-hover)] transition-colors ${!n.delivered ? "bg-[var(--accent-blue)]/5" : ""}`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        {from && <span className="font-medium text-[var(--accent-blue)]">{from.emoji} {from.name}</span>}
+                        <TimeAgo timestamp={n.createdAt} />
+                        {!n.delivered && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-blue)]" />}
+                      </div>
+                      <div className="text-[var(--text-secondary)]"><HighlightMentions text={n.content} /></div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Sidebar ────────────────────────────────────────────────────────
 
 function Sidebar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void }) {
@@ -49,10 +127,11 @@ function Sidebar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-4 py-5 border-b border-[var(--border)]">
         <span className="text-xl">🛰️</span>
-        <div>
+        <div className="flex-1">
           <div className="text-sm font-bold leading-tight">Mission Control</div>
           <div className="text-[10px] text-[var(--text-secondary)]">OpenClaw</div>
         </div>
+        <NotificationBell />
       </div>
 
       {/* Nav */}
@@ -95,22 +174,272 @@ function Sidebar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void
 
 function MobileNav({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void }) {
   return (
-    <div className="md:hidden flex items-center gap-1 overflow-x-auto px-2 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)] sticky top-0 z-10">
-      <span className="text-lg mr-1">🛰️</span>
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onSelect(tab.id)}
-          className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg whitespace-nowrap transition-colors ${
-            active === tab.id
-              ? "bg-[var(--accent-blue)]/15 text-[var(--accent-blue)]"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          }`}
-        >
-          <span>{tab.icon}</span>
-          <span>{tab.label}</span>
-        </button>
-      ))}
+    <div className="md:hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🛰️</span>
+          <span className="text-sm font-bold">Mission Control</span>
+        </div>
+        <NotificationBell />
+      </div>
+      <div className="flex items-center gap-1 overflow-x-auto px-2 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)] sticky top-0 z-10">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onSelect(tab.id)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg whitespace-nowrap transition-colors ${
+              active === tab.id
+                ? "bg-[var(--accent-blue)]/15 text-[var(--accent-blue)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Task Detail Modal ──────────────────────────────────────────────
+
+function TaskDetailModal({
+  task,
+  agents,
+  onClose,
+}: {
+  task: {
+    _id: Id<"tasks">;
+    title: string;
+    description?: string;
+    status: string;
+    priority: string;
+    assigneeIds: Id<"agents">[];
+    category?: string;
+    blocker?: string;
+    dueDate?: string;
+    createdAt: number;
+    updatedAt: number;
+  };
+  agents: { _id: Id<"agents">; name: string; emoji: string; role: string }[];
+  onClose: () => void;
+}) {
+  const comments = useQuery(api.comments.getByTask, { taskId: task._id });
+  const addComment = useMutation(api.comments.add);
+  const updateTask = useMutation(api.tasks.update);
+  const [newComment, setNewComment] = useState("");
+  const [selectedAgent, setSelectedAgent] = useState("");
+  const [showAssign, setShowAssign] = useState(false);
+  const commentsEndRef = useRef<HTMLDivElement>(null);
+
+  const agentMap = new Map(agents.map((a) => [a._id, a]));
+
+  useEffect(() => {
+    commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [comments?.length]);
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !selectedAgent) return;
+    await addComment({
+      taskId: task._id,
+      agentId: selectedAgent as Id<"agents">,
+      message: newComment.trim(),
+    });
+    setNewComment("");
+  };
+
+  const handleAssign = async (agentId: Id<"agents">) => {
+    const current = task.assigneeIds;
+    const isAssigned = current.includes(agentId);
+    const newIds = isAssigned
+      ? current.filter((id) => id !== agentId)
+      : [...current, agentId];
+    await updateTask({ id: task._id, assigneeIds: newIds });
+  };
+
+  const statusColors: Record<string, string> = {
+    todo: "bg-blue-500/20 text-blue-300",
+    in_progress: "bg-yellow-500/20 text-yellow-300",
+    review: "bg-purple-500/20 text-purple-300",
+    done: "bg-green-500/20 text-green-300",
+    blocked: "bg-red-500/20 text-red-300",
+    backlog: "bg-gray-500/20 text-gray-300",
+  };
+
+  const priorityColors: Record<string, string> = {
+    critical: "bg-red-500/20 text-red-300",
+    high: "bg-orange-500/20 text-orange-300",
+    medium: "bg-blue-500/20 text-blue-300",
+    low: "bg-gray-500/20 text-gray-300",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-[var(--bg-secondary)] border border-[var(--border)] rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-start justify-between p-5 border-b border-[var(--border)]">
+          <div className="flex-1 min-w-0 pr-4">
+            <h2 className="text-lg font-semibold mb-2">{task.title}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`px-2 py-0.5 text-[10px] rounded-full ${statusColors[task.status]}`}>
+                {task.status.replace("_", " ")}
+              </span>
+              <span className={`px-2 py-0.5 text-[10px] rounded-full ${priorityColors[task.priority]}`}>
+                {task.priority}
+              </span>
+              {task.category && (
+                <span className="px-2 py-0.5 text-[10px] rounded-full bg-[var(--bg-primary)] text-[var(--text-secondary)]">
+                  {task.category}
+                </span>
+              )}
+              {task.dueDate && (
+                <span className="text-[10px] text-[var(--text-secondary)]">Due: {task.dueDate}</span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors p-1"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Description */}
+          {task.description && (
+            <div>
+              <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase mb-1">Description</h3>
+              <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">{task.description}</p>
+            </div>
+          )}
+
+          {/* Blocker */}
+          {task.blocker && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <div className="text-xs font-semibold text-red-300 mb-0.5">Blocker</div>
+              <div className="text-sm text-red-200">{task.blocker}</div>
+            </div>
+          )}
+
+          {/* Assignees */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase">Assigned Agents</h3>
+              <button
+                onClick={() => setShowAssign(!showAssign)}
+                className="text-[10px] text-[var(--accent-blue)] hover:underline"
+              >
+                {showAssign ? "Done" : "Edit"}
+              </button>
+            </div>
+            {task.assigneeIds.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {task.assigneeIds.map((id) => {
+                  const agent = agentMap.get(id);
+                  if (!agent) return null;
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--accent-blue)]/10 text-[var(--accent-blue)] rounded-full text-xs">
+                      {agent.emoji} {agent.name}
+                      {showAssign && (
+                        <button onClick={() => handleAssign(id)} className="ml-0.5 hover:text-red-300">x</button>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-xs text-[var(--text-secondary)]">No agents assigned</div>
+            )}
+            {showAssign && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {agents
+                  .filter((a) => !task.assigneeIds.includes(a._id))
+                  .map((a) => (
+                    <button
+                      key={a._id}
+                      onClick={() => handleAssign(a._id)}
+                      className="px-2 py-1 text-xs bg-[var(--bg-primary)] border border-[var(--border)] rounded-full hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)] transition-colors"
+                    >
+                      {a.emoji} {a.name}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* Comments */}
+          <div>
+            <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase mb-2">
+              Comments {comments && comments.length > 0 && `(${comments.length})`}
+            </h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {(!comments || comments.length === 0) ? (
+                <div className="text-xs text-[var(--text-secondary)] py-3 text-center">No comments yet</div>
+              ) : (
+                comments.map((c) => {
+                  const agent = agentMap.get(c.agentId);
+                  return (
+                    <div key={c._id} className="bg-[var(--bg-primary)] rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {agent && (
+                          <span className="text-xs font-medium text-[var(--accent-blue)]">
+                            {agent.emoji} {agent.name}
+                          </span>
+                        )}
+                        <TimeAgo timestamp={c.createdAt} />
+                      </div>
+                      <div className="text-sm text-[var(--text-primary)]">
+                        <HighlightMentions text={c.message} />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={commentsEndRef} />
+            </div>
+          </div>
+        </div>
+
+        {/* Add Comment */}
+        <div className="border-t border-[var(--border)] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-[var(--text-secondary)]">Comment as:</span>
+            <select
+              value={selectedAgent}
+              onChange={(e) => setSelectedAgent(e.target.value)}
+              className="text-xs bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)]"
+            >
+              <option value="">Select agent...</option>
+              {agents.map((a) => (
+                <option key={a._id} value={a._id}>{a.emoji} {a.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
+              placeholder="Add a comment... (use @name to mention)"
+              className="flex-1 text-sm bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)]"
+            />
+            <button
+              onClick={handleAddComment}
+              disabled={!newComment.trim() || !selectedAgent}
+              className="px-4 py-2 text-sm font-medium bg-[var(--accent-blue)] text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -157,7 +486,9 @@ function OverviewTab() {
                 </div>
                 <div className="text-xs text-[var(--text-secondary)]">{agent.role}</div>
                 {agent.currentTask && (
-                  <div className="text-[10px] text-[var(--accent-yellow)] mt-0.5 truncate">{agent.currentTask}</div>
+                  <div className="text-[10px] text-[var(--accent-yellow)] mt-0.5 truncate" title={agent.currentTask}>
+                    ⚙️ {agent.currentTask}
+                  </div>
                 )}
                 {agent.lastHeartbeat && <div className="mt-1"><TimeAgo timestamp={agent.lastHeartbeat} /></div>}
               </div>
@@ -255,7 +586,7 @@ function AgentsTab() {
                 {(agent.currentTask || currentTask) && (
                   <div className="flex gap-2">
                     <span className="text-[var(--text-secondary)] w-16">Task</span>
-                    <span className="text-[var(--accent-yellow)]">{agent.currentTask || currentTask}</span>
+                    <span className="text-[var(--accent-yellow)]">⚙️ {agent.currentTask || currentTask}</span>
                   </div>
                 )}
               </div>
@@ -277,40 +608,13 @@ function AgentsTab() {
   );
 }
 
-// ─── Task Comments ──────────────────────────────────────────────────
-
-function TaskComments({ taskId, agents }: { taskId: Id<"tasks">; agents: { _id: string; name: string; emoji: string }[] }) {
-  const comments = useQuery(api.comments.getByTask, { taskId });
-  const agentMap = new Map(agents.map((a) => [a._id, a]));
-
-  if (!comments || comments.length === 0) return null;
-
-  return (
-    <div className="mt-2 pt-2 border-t border-[var(--border)] space-y-1.5">
-      <div className="text-[10px] text-[var(--text-secondary)] uppercase">Comments ({comments.length})</div>
-      {comments.map((c) => {
-        const agent = agentMap.get(c.agentId);
-        return (
-          <div key={c._id} className="text-xs bg-[var(--bg-primary)] rounded px-2 py-1.5">
-            <div className="flex items-center gap-1 mb-0.5">
-              {agent && <span className="font-medium text-[var(--accent-blue)]">{agent.emoji} {agent.name}</span>}
-              <TimeAgo timestamp={c.createdAt} />
-            </div>
-            <div className="text-[var(--text-secondary)]">{c.message}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Tasks Tab ──────────────────────────────────────────────────────
 
 function TaskBoard() {
   const tasks = useQuery(api.tasks.list);
   const agents = useQuery(api.agents.list);
   const [filter, setFilter] = useState<string>("all");
-  const [expandedTask, setExpandedTask] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<string | null>(null);
   if (!tasks || !agents) return <div className="text-[var(--text-secondary)]">Loading tasks...</div>;
 
   const columns = ["todo", "in_progress", "review", "done", "blocked", "backlog"];
@@ -330,6 +634,8 @@ function TaskBoard() {
 
   const categories = ["all", ...new Set(tasks.map((t) => t.category).filter(Boolean))];
   const filtered = filter === "all" ? tasks : tasks.filter((t) => t.category === filter);
+
+  const openTask = selectedTask ? tasks.find((t) => t._id === selectedTask) : null;
 
   return (
     <div>
@@ -364,24 +670,161 @@ function TaskBoard() {
                 {colTasks.map((task) => (
                   <div
                     key={task._id}
-                    className="bg-[var(--bg-card)] border border-[var(--border)] rounded p-2 hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
-                    onClick={() => setExpandedTask(expandedTask === task._id ? null : task._id)}
+                    className="bg-[var(--bg-card)] border border-[var(--border)] rounded p-2 hover:bg-[var(--bg-hover)] hover:border-[var(--accent-blue)]/50 transition-colors cursor-pointer group"
+                    onClick={() => setSelectedTask(task._id)}
                   >
-                    <div className="text-xs font-medium mb-1">{task.title}</div>
+                    <div className="text-xs font-medium mb-1 group-hover:text-[var(--accent-blue)] transition-colors">{task.title}</div>
                     <div className="flex items-center gap-1">
                       <span className={`px-1.5 py-0.5 text-[10px] rounded ${priorityBadge[task.priority]}`}>{task.priority}</span>
                       {task.category && <span className="text-[10px] text-[var(--text-secondary)]">{task.category}</span>}
                     </div>
-                    {task.blocker && <div className="mt-1 text-[10px] text-red-300">Blocked: {task.blocker}</div>}
-                    {expandedTask === task._id && (
-                      <TaskComments taskId={task._id as Id<"tasks">} agents={agents} />
+                    {task.assigneeIds.length > 0 && (
+                      <div className="flex items-center gap-0.5 mt-1">
+                        {task.assigneeIds.map((id) => {
+                          const a = agents.find((ag) => ag._id === id);
+                          return a ? <span key={id} className="text-xs" title={a.name}>{a.emoji}</span> : null;
+                        })}
+                      </div>
                     )}
+                    {task.blocker && <div className="mt-1 text-[10px] text-red-300">Blocked: {task.blocker}</div>}
                   </div>
                 ))}
               </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Task Detail Modal */}
+      {openTask && (
+        <TaskDetailModal
+          task={openTask as any}
+          agents={agents as any}
+          onClose={() => setSelectedTask(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Chat Tab ───────────────────────────────────────────────────────
+
+function ChatTab() {
+  const messages = useQuery(api.messages.listRecent, { limit: 100 });
+  const agents = useQuery(api.agents.list);
+  const tasks = useQuery(api.tasks.list);
+  const createMessage = useMutation(api.messages.create);
+  const [newMsg, setNewMsg] = useState("");
+  const [selectedAgent, setSelectedAgent] = useState("");
+  const [selectedTask, setSelectedTask] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const agentMap = new Map(agents?.map((a) => [a._id, a]) ?? []);
+  const taskMap = new Map(tasks?.map((t) => [t._id, t]) ?? []);
+
+  // Messages come in desc order from API, reverse for display
+  const sorted = messages ? [...messages].reverse() : [];
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages?.length]);
+
+  const handleSend = async () => {
+    if (!newMsg.trim() || !selectedAgent) return;
+    await createMessage({
+      fromAgentId: selectedAgent as Id<"agents">,
+      content: newMsg.trim(),
+      ...(selectedTask ? { taskId: selectedTask as Id<"tasks"> } : {}),
+    });
+    setNewMsg("");
+  };
+
+  if (!agents) return <div className="text-[var(--text-secondary)]">Loading...</div>;
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-3rem)]">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold">Agent Chat</h2>
+        <span className="text-xs text-[var(--text-secondary)]">{sorted.length} messages</span>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto space-y-2 mb-4 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+        {sorted.length === 0 ? (
+          <div className="text-center py-12 text-[var(--text-secondary)]">
+            <div className="text-3xl mb-3">💬</div>
+            <div className="text-sm">No messages yet</div>
+            <div className="text-xs mt-1">Agent messages will appear here in real-time</div>
+          </div>
+        ) : (
+          sorted.map((msg) => {
+            const agent = agentMap.get(msg.fromAgentId);
+            const task = msg.taskId ? taskMap.get(msg.taskId) : null;
+            return (
+              <div key={msg._id} className="flex gap-3 p-2 rounded-lg hover:bg-[var(--bg-hover)] transition-colors">
+                <span className="text-xl flex-shrink-0 mt-0.5">{agent?.emoji ?? "❓"}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-sm font-medium text-[var(--accent-blue)] capitalize">{agent?.name ?? "unknown"}</span>
+                    <TimeAgo timestamp={msg.createdAt} />
+                    {task && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-[var(--bg-primary)] border border-[var(--border)] rounded text-[var(--text-secondary)] truncate max-w-[150px]">
+                        re: {task.title}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-[var(--text-primary)]">
+                    <HighlightMentions text={msg.content} />
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Compose */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <select
+            value={selectedAgent}
+            onChange={(e) => setSelectedAgent(e.target.value)}
+            className="text-xs bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)]"
+          >
+            <option value="">Send as...</option>
+            {agents.map((a) => (
+              <option key={a._id} value={a._id}>{a.emoji} {a.name}</option>
+            ))}
+          </select>
+          <select
+            value={selectedTask}
+            onChange={(e) => setSelectedTask(e.target.value)}
+            className="text-xs bg-[var(--bg-primary)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)] max-w-[200px]"
+          >
+            <option value="">No task link</option>
+            {tasks?.map((t) => (
+              <option key={t._id} value={t._id}>{t.title}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newMsg}
+            onChange={(e) => setNewMsg(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            placeholder="Type a message... (use @name to mention)"
+            className="flex-1 text-sm bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)]"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!newMsg.trim() || !selectedAgent}
+            className="px-4 py-2 text-sm font-medium bg-[var(--accent-blue)] text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Send
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -787,6 +1230,7 @@ export default function Dashboard() {
     overview: <OverviewTab />,
     agents: <AgentsTab />,
     tasks: <TaskBoard />,
+    chat: <ChatTab />,
     content: <ContentQueue />,
     products: <ProductsTab />,
     activity: <ActivityFeed />,
