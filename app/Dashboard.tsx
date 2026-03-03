@@ -1263,8 +1263,11 @@ function ProductsTab() {
 // ─── Activity Tab ───────────────────────────────────────────────────
 
 function ActivityFeed() {
-  const activities = useQuery(api.activities.list, { limit: 100 });
+  const activities = useQuery(api.activities.listAll, { limit: 200 });
   const agents = useQuery(api.agents.list);
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [agentFilterId, setAgentFilterId] = useState<string>("all");
+
   if (!activities || !agents) return <div className="text-[var(--text-secondary)]">Loading...</div>;
 
   const agentMap = new Map(agents.map((a) => [a._id, a]));
@@ -1276,21 +1279,81 @@ function ActivityFeed() {
     consolidation: "🌙", custom: "⚡", comment: "💬",
   };
 
+  const allTypes = [...new Set(activities.map((a) => a.type))];
+  const allAgentIds = [...new Set(activities.map((a) => a.agentId).filter((id): id is NonNullable<typeof id> => !!id))];
+
+  let filtered = activities;
+  if (typeFilter !== "all") filtered = filtered.filter((a) => a.type === typeFilter);
+  if (agentFilterId !== "all") filtered = filtered.filter((a) => a.agentId === agentFilterId);
+
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-3">Activity Feed</h2>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h2 className="text-lg font-semibold">Activity Feed ({filtered.length})</h2>
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={agentFilterId} onChange={(e) => setAgentFilterId(e.target.value)}
+            className="text-xs bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)]"
+          >
+            <option value="all">All agents</option>
+            {allAgentIds.map((id) => {
+              const a = agentMap.get(id);
+              return a ? <option key={id} value={id}>{a.emoji} {a.name}</option> : null;
+            })}
+          </select>
+          <select
+            value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+            className="text-xs bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)]"
+          >
+            <option value="all">All types</option>
+            {allTypes.map((t) => <option key={t} value={t}>{t.replace("_", " ")}</option>)}
+          </select>
+        </div>
+      </div>
       <div className="space-y-1">
-        {activities.map((activity) => {
+        {filtered.length === 0 && (
+          <div className="text-center py-8 text-[var(--text-secondary)]">
+            <div className="text-3xl mb-3">⚡</div>
+            <div className="text-sm">No activity matches filters</div>
+          </div>
+        )}
+        {filtered.map((activity) => {
           const agent = activity.agentId ? agentMap.get(activity.agentId) : null;
+          const meta = activity.metadata as Record<string, any> | undefined;
+          const hasCodingDetails = meta && (meta.pid || meta.taskName || meta.duration);
           return (
-            <div key={activity._id} className="flex items-start gap-2 p-2 bg-[var(--bg-card)] border border-[var(--border)] rounded hover:bg-[var(--bg-hover)] transition-colors">
-              <span className="text-sm">{typeIcons[activity.type] || "⚡"}</span>
+            <div key={activity._id} className="flex items-start gap-2 p-2.5 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg hover:bg-[var(--bg-hover)] transition-colors">
+              <span className="text-sm mt-0.5">{typeIcons[activity.type] || "⚡"}</span>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {agent && <span className="text-xs font-medium text-[var(--accent-blue)] capitalize">{agent.emoji} {agent.name}</span>}
+                  <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-[var(--bg-primary)] text-[var(--text-secondary)]">{activity.type.replace(/_/g, " ")}</span>
                   <TimeAgo timestamp={activity.createdAt} />
                 </div>
-                <div className="text-xs text-[var(--text-secondary)] truncate">{activity.message}</div>
+                <div className="text-xs text-[var(--text-secondary)] mt-0.5">{activity.message}</div>
+                {hasCodingDetails && (
+                  <div className="mt-1.5 flex items-center gap-3 flex-wrap text-[10px]">
+                    {meta.pid && (
+                      <span className="px-1.5 py-0.5 rounded bg-[var(--accent-purple)]/10 text-[var(--accent-purple)]">PID: {meta.pid}</span>
+                    )}
+                    {meta.taskName && (
+                      <span className="px-1.5 py-0.5 rounded bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]">{meta.taskName}</span>
+                    )}
+                    {meta.startTime && (
+                      <span className="text-[var(--text-secondary)]">Started: {new Date(meta.startTime).toLocaleTimeString()}</span>
+                    )}
+                    {meta.duration && (
+                      <span className="px-1.5 py-0.5 rounded bg-[var(--accent-green)]/10 text-[var(--accent-green)]">{meta.duration}</span>
+                    )}
+                    {meta.status && (
+                      <span className={`px-1.5 py-0.5 rounded ${
+                        meta.status === "running" ? "bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)]" :
+                        meta.status === "completed" ? "bg-[var(--accent-green)]/10 text-[var(--accent-green)]" :
+                        "bg-[var(--accent-red)]/10 text-[var(--accent-red)]"
+                      }`}>{meta.status}</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           );

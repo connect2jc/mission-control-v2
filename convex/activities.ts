@@ -25,6 +25,30 @@ export const listByAgent = query({
   },
 });
 
+export const listByType = query({
+  args: { type: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+    return await ctx.db
+      .query("activities")
+      .withIndex("by_type", (q) => q.eq("type", args.type as any))
+      .order("desc")
+      .take(limit);
+  },
+});
+
+export const listAll = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 200;
+    return await ctx.db
+      .query("activities")
+      .withIndex("by_createdAt")
+      .order("desc")
+      .take(limit);
+  },
+});
+
 export const create = mutation({
   args: {
     type: v.union(
