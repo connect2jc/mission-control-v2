@@ -563,11 +563,20 @@ function OverviewTab({ onAgentClick }: { onAgentClick?: (agentId: string) => voi
 
 // ─── Agents Tab ─────────────────────────────────────────────────────
 
+function getRank(total: number): { label: string; color: string } {
+  if (total >= 100) return { label: "Lead", color: "text-[var(--accent-purple)]" };
+  if (total >= 50) return { label: "Senior", color: "text-[var(--accent-blue)]" };
+  return { label: "Junior", color: "text-[var(--text-secondary)]" };
+}
+
 function AgentsTab({ onAgentClick }: { onAgentClick?: (agentId: string) => void }) {
   const agents = useQuery(api.agents.list);
   const activities = useQuery(api.activities.list, { limit: 50 });
   const tasks = useQuery(api.tasks.list);
-  const [sortBy, setSortBy] = useState<"active" | "idle" | "alpha">("active");
+  const leaderboard = useQuery(api.karma.getLeaderboard);
+  const karmaHistory = useQuery(api.karma.listAll, { limit: 50 });
+  const [sortBy, setSortBy] = useState<"active" | "idle" | "alpha" | "karma">("active");
+  const [showKarmaHistory, setShowKarmaHistory] = useState(false);
 
   if (!agents) return <div className="text-[var(--text-secondary)]">Loading agents...</div>;
 
@@ -594,20 +603,84 @@ function AgentsTab({ onAgentClick }: { onAgentClick?: (agentId: string) => void 
     }
   }
 
+  const karmaByAgent = new Map<string, number>();
+  if (leaderboard) {
+    for (const entry of leaderboard) {
+      karmaByAgent.set(entry.agentName, entry.total);
+    }
+  }
+
   const sortedAgents = [...agents].sort((a, b) => {
     if (sortBy === "alpha") return a.name.localeCompare(b.name);
+    if (sortBy === "karma") return (karmaByAgent.get(b.name) ?? 0) - (karmaByAgent.get(a.name) ?? 0);
     const aWorking = a.currentStatus === "working" || a.currentTask ? 1 : 0;
     const bWorking = b.currentStatus === "working" || b.currentTask ? 1 : 0;
     if (sortBy === "active") return bWorking - aWorking;
     return aWorking - bWorking;
   });
 
+  const agentMap = new Map(agents.map((a) => [a._id, a]));
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* Karma Leaderboard */}
+      {leaderboard && leaderboard.length > 0 && (
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold">Karma Leaderboard</h3>
+            <button
+              onClick={() => setShowKarmaHistory(!showKarmaHistory)}
+              className="text-[10px] text-[var(--accent-blue)] hover:underline"
+            >
+              {showKarmaHistory ? "Hide history" : "Show history"}
+            </button>
+          </div>
+          <div className="flex items-end gap-3 overflow-x-auto pb-1">
+            {leaderboard.map((entry, idx) => {
+              const agent = agents.find((a) => a.name === entry.agentName);
+              const rank = getRank(entry.total);
+              const medals = ["🥇", "🥈", "🥉"];
+              return (
+                <div key={entry.agentName} className="flex flex-col items-center min-w-[80px] flex-shrink-0">
+                  <span className="text-lg">{idx < 3 ? medals[idx] : ""}</span>
+                  <span className="text-xl">{agent?.emoji || "🤖"}</span>
+                  <span className="text-xs font-medium capitalize mt-1">{entry.agentName}</span>
+                  <span className="text-sm font-bold text-[var(--accent-yellow)]">{entry.total} pts</span>
+                  <span className={`text-[10px] font-medium ${rank.color}`}>{rank.label}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Karma History */}
+          {showKarmaHistory && karmaHistory && karmaHistory.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1 max-h-48 overflow-y-auto">
+              <div className="text-[10px] text-[var(--text-secondary)] uppercase mb-1">Recent karma</div>
+              {karmaHistory.map((k) => {
+                const typeColors: Record<string, string> = {
+                  build: "bg-[var(--accent-green)]/10 text-[var(--accent-green)]",
+                  qc: "bg-[var(--accent-purple)]/10 text-[var(--accent-purple)]",
+                  assist: "bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]",
+                };
+                return (
+                  <div key={k._id} className="flex items-center gap-2 text-xs">
+                    <span className="font-medium text-[var(--accent-yellow)] w-10 text-right">+{k.points}</span>
+                    <span className="capitalize font-medium">{k.agentName}</span>
+                    <span className={`px-1.5 py-0.5 text-[10px] rounded ${typeColors[k.type] || ""}`}>{k.type}</span>
+                    {k.reason && <span className="text-[var(--text-secondary)] truncate flex-1">{k.reason}</span>}
+                    <TimeAgo timestamp={k.earnedAt} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Agents ({agents.length})</h2>
         <div className="flex gap-1">
-          {(["active", "idle", "alpha"] as const).map((s) => (
+          {(["active", "idle", "alpha", "karma"] as const).map((s) => (
             <button
               key={s}
               onClick={() => setSortBy(s)}
@@ -617,7 +690,7 @@ function AgentsTab({ onAgentClick }: { onAgentClick?: (agentId: string) => void 
                   : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
               }`}
             >
-              {s === "active" ? "Active first" : s === "idle" ? "Idle first" : "A-Z"}
+              {s === "active" ? "Active first" : s === "idle" ? "Idle first" : s === "alpha" ? "A-Z" : "Karma"}
             </button>
           ))}
         </div>
@@ -631,6 +704,8 @@ function AgentsTab({ onAgentClick }: { onAgentClick?: (agentId: string) => void 
           const taskDotColor = taskStatus === "working" ? "bg-green-400" : taskStatus === "blocked" ? "bg-red-400" : "bg-gray-400";
           const taskDotClass = taskStatus === "working" ? `${taskDotColor} animate-pulse` : taskDotColor;
           const borderClass = taskStatus === "working" ? "border-[var(--accent-green)]/40" : taskStatus === "blocked" ? "border-[var(--accent-red)]/40" : "border-[var(--border)]";
+          const agentKarma = karmaByAgent.get(agent.name) ?? 0;
+          const rank = getRank(agentKarma);
           return (
             <div
               key={agent._id}
@@ -647,7 +722,14 @@ function AgentsTab({ onAgentClick }: { onAgentClick?: (agentId: string) => void 
                   </div>
                   <div className="text-xs text-[var(--text-secondary)]">{agent.role}</div>
                 </div>
-                {agent.lastHeartbeat && <TimeAgo timestamp={agent.lastHeartbeat} />}
+                <div className="flex flex-col items-end gap-0.5">
+                  {agent.lastHeartbeat && <TimeAgo timestamp={agent.lastHeartbeat} />}
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-bold text-[var(--accent-yellow)]">{agentKarma}</span>
+                    <span className="text-[10px] text-[var(--text-secondary)]">karma</span>
+                  </div>
+                  <span className={`text-[10px] font-medium ${rank.color}`}>{rank.label}</span>
+                </div>
               </div>
 
               {/* Current task display */}

@@ -174,6 +174,19 @@ export default defineSchema({
     .index("by_draft", ["draftId", "createdAt"])
     .index("by_createdAt", ["createdAt"]),
 
+  karma: defineTable({
+    agentName: v.string(),
+    agentId: v.id("agents"),
+    points: v.number(),
+    earnedFrom: v.optional(v.id("tasks")),
+    earnedAt: v.number(),
+    type: v.union(v.literal("build"), v.literal("qc"), v.literal("assist")),
+    reason: v.optional(v.string()),
+  })
+    .index("by_agent", ["agentId", "earnedAt"])
+    .index("by_agentName", ["agentName", "earnedAt"])
+    .index("by_type", ["type", "earnedAt"]),
+
   memories: defineTable({
     agentId: v.id("agents"),
     content: v.string(),

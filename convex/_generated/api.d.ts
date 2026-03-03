@@ -14,6 +14,7 @@ import type * as auth from "../auth.js";
 import type * as comments from "../comments.js";
 import type * as content from "../content.js";
 import type * as documents from "../documents.js";
+import type * as karma from "../karma.js";
 import type * as memories from "../memories.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   comments: typeof comments;
   content: typeof content;
   documents: typeof documents;
+  karma: typeof karma;
   memories: typeof memories;
   messages: typeof messages;
   notifications: typeof notifications;
