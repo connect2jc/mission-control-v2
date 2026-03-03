@@ -1186,12 +1186,15 @@ function ContentQueue() {
 function ProductsTab() {
   const tasks = useQuery(api.tasks.list);
   const agents = useQuery(api.agents.list);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   if (!tasks || !agents) return <div className="text-[var(--text-secondary)]">Loading products...</div>;
 
   const products = tasks.filter(
     (t) => t.category === "product" || t.category === "coding" || t.category === "development"
   );
+
+  const filtered = statusFilter === "all" ? products : products.filter((t) => t.status === statusFilter);
 
   const statusColors: Record<string, string> = {
     todo: "bg-blue-500/15 text-blue-600",
@@ -1202,58 +1205,99 @@ function ProductsTab() {
     backlog: "bg-gray-500/15 text-gray-600",
   };
 
+  const progressMap: Record<string, number> = {
+    backlog: 0, todo: 10, in_progress: 50, review: 75, done: 100, blocked: 30,
+  };
+
+  const progressColor = (pct: number) =>
+    pct === 100 ? "bg-[var(--accent-green)]" : pct >= 50 ? "bg-[var(--accent-yellow)]" : "bg-[var(--accent-blue)]";
+
+  const statuses = ["all", ...new Set(products.map((p) => p.status))];
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Products & Coding Projects</h2>
-        <span className="text-xs text-[var(--text-secondary)]">{products.length} projects</span>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold">Products & Projects</h2>
+          <span className="text-xs text-[var(--text-secondary)]">{filtered.length} of {products.length}</span>
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {statuses.map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                statusFilter === s
+                  ? "bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white"
+                  : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
+              }`}
+            >
+              {s === "all" ? "All" : s.replace("_", " ")}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {products.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="text-center py-12 text-[var(--text-secondary)]">
           <div className="text-3xl mb-3">🚀</div>
           <div className="text-sm">No product/coding tasks yet</div>
           <div className="text-xs mt-1">Tasks with category &quot;product&quot;, &quot;coding&quot;, or &quot;development&quot; appear here</div>
         </div>
       ) : (
-        <div className="space-y-3">
-          {products.map((task) => (
-            <div key={task._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4 hover:bg-[var(--bg-hover)] transition-colors">
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-sm font-semibold flex-1">{task.title}</span>
-                <span className={`px-2 py-0.5 text-[10px] rounded-full ${statusColors[task.status]}`}>{task.status.replace("_", " ")}</span>
-              </div>
-              {task.description && (
-                <div className="text-xs text-[var(--text-secondary)] mb-3 line-clamp-2">{task.description}</div>
-              )}
-              <div className="flex items-center gap-4 text-xs">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {filtered.map((task) => {
+            const progress = progressMap[task.status] ?? 0;
+            return (
+              <div key={task._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4 hover:bg-[var(--bg-hover)] transition-colors">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <span className="text-sm font-semibold flex-1">{task.title}</span>
+                  <span className={`px-2 py-0.5 text-[10px] rounded-full flex-shrink-0 ${statusColors[task.status]}`}>{task.status.replace("_", " ")}</span>
+                </div>
+
+                {task.description && (
+                  <div className="text-xs text-[var(--text-secondary)] mb-3 line-clamp-3">{task.description}</div>
+                )}
+
+                {/* Progress bar */}
+                <div className="mb-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] text-[var(--text-secondary)]">Progress</span>
+                    <span className="text-[10px] font-medium">{progress}%</span>
+                  </div>
+                  <div className="w-full bg-[var(--bg-primary)] rounded-full h-1.5">
+                    <div className={`h-1.5 rounded-full transition-all ${progressColor(progress)}`} style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
+
+                {/* Assigned agents */}
                 {task.assigneeIds.length > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[var(--text-secondary)]">Agent:</span>
+                  <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                     {task.assigneeIds.map((id) => {
                       const a = agents.find((ag) => ag._id === id);
-                      return a ? <span key={id} className="text-[var(--accent-blue)] capitalize">{a.emoji} {a.name}</span> : null;
+                      return a ? (
+                        <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]">
+                          {a.emoji} {a.name}
+                        </span>
+                      ) : null;
                     })}
                   </div>
                 )}
-                {task.category && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[var(--text-secondary)]">Category:</span>
-                    <span>{task.category}</span>
+
+                <div className="flex items-center gap-3 text-[10px] text-[var(--text-secondary)]">
+                  {task.category && <span className="px-1.5 py-0.5 rounded bg-[var(--bg-primary)]">{task.category}</span>}
+                  <span className="capitalize">{task.priority}</span>
+                  {task.dueDate && <span>Due: {task.dueDate}</span>}
+                </div>
+
+                {task.blocker && (
+                  <div className="mt-2 text-[10px] text-[var(--accent-red)] bg-red-500/10 rounded px-2 py-1">
+                    Blocker: {task.blocker}
                   </div>
                 )}
-                <div className="flex items-center gap-1">
-                  <span className="text-[var(--text-secondary)]">Priority:</span>
-                  <span>{task.priority}</span>
-                </div>
               </div>
-              {task.blocker && (
-                <div className="mt-2 text-xs text-[var(--accent-red)] bg-red-500/10 rounded px-2 py-1">
-                  Blocker: {task.blocker}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
