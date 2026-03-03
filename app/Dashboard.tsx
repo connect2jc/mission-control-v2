@@ -331,6 +331,10 @@ function TaskDetailModal({
                 <span className="text-[10px] text-[var(--text-secondary)]">Due: {task.dueDate}</span>
               )}
             </div>
+            <div className="flex gap-3 mt-1 text-[10px] text-[var(--text-secondary)]">
+              <span>Created: {new Date(task.createdAt).toLocaleDateString()}</span>
+              <span>Updated: {new Date(task.updatedAt).toLocaleDateString()}</span>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -695,6 +699,7 @@ function TaskBoard({ agentFilter, onClearAgentFilter }: { agentFilter?: string |
   const agents = useQuery(api.agents.list);
   const [filter, setFilter] = useState<string>("all");
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
   if (!tasks || !agents) return <div className="text-[var(--text-secondary)]">Loading tasks...</div>;
   const filterAgent = agentFilter ? agents.find((a) => a._id === agentFilter) : null;
 
@@ -773,28 +778,57 @@ function TaskBoard({ agentFilter, onClearAgentFilter }: { agentFilter?: string |
                 </span>
               </div>
               <div className="space-y-1.5">
-                {colTasks.map((task) => (
-                  <div
-                    key={task._id}
-                    className="bg-[var(--bg-card)] border border-[var(--border)] rounded p-2 hover:bg-[var(--bg-hover)] hover:border-[var(--accent-blue)]/50 transition-colors cursor-pointer group"
-                    onClick={() => setSelectedTask(task._id)}
-                  >
-                    <div className="text-xs font-medium mb-1 group-hover:text-[var(--accent-blue)] transition-colors">{task.title}</div>
-                    <div className="flex items-center gap-1">
-                      <span className={`px-1.5 py-0.5 text-[10px] rounded ${priorityBadge[task.priority]}`}>{task.priority}</span>
-                      {task.category && <span className="text-[10px] text-[var(--text-secondary)]">{task.category}</span>}
-                    </div>
-                    {task.assigneeIds.length > 0 && (
-                      <div className="flex items-center gap-0.5 mt-1">
-                        {task.assigneeIds.map((id) => {
-                          const a = agents.find((ag) => ag._id === id);
-                          return a ? <span key={id} className="text-xs" title={a.name}>{a.emoji}</span> : null;
-                        })}
+                {colTasks.map((task) => {
+                  const isExpanded = expandedCard === task._id;
+                  return (
+                    <div
+                      key={task._id}
+                      className="bg-[var(--bg-card)] border border-[var(--border)] rounded p-2 hover:bg-[var(--bg-hover)] hover:border-[var(--accent-blue)]/50 transition-colors cursor-pointer group"
+                    >
+                      <div onClick={() => setExpandedCard(isExpanded ? null : task._id)}>
+                        <div className="text-xs font-medium mb-1 group-hover:text-[var(--accent-blue)] transition-colors">{task.title}</div>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className={`px-1.5 py-0.5 text-[10px] rounded ${priorityBadge[task.priority]}`}>{task.priority}</span>
+                          {task.category && <span className="text-[10px] text-[var(--text-secondary)]">{task.category}</span>}
+                        </div>
+                        {task.assigneeIds.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1 flex-wrap">
+                            {task.assigneeIds.map((id) => {
+                              const a = agents.find((ag) => ag._id === id);
+                              return a ? (
+                                <span key={id} className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-secondary)]">
+                                  {a.emoji} <span className="capitalize">{a.name}</span>
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                        )}
+                        {task.blocker && <div className="mt-1 text-[10px] text-[var(--accent-red)]">Blocked: {task.blocker}</div>}
                       </div>
-                    )}
-                    {task.blocker && <div className="mt-1 text-[10px] text-[var(--accent-red)]">Blocked: {task.blocker}</div>}
-                  </div>
-                ))}
+
+                      {/* Expanded inline detail */}
+                      {isExpanded && (
+                        <div className="mt-2 pt-2 border-t border-[var(--border)] space-y-1.5">
+                          {task.description && (
+                            <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">{task.description}</p>
+                          )}
+                          <div className="text-[10px] text-[var(--text-secondary)]">
+                            Created: {new Date(task.createdAt).toLocaleDateString()}
+                          </div>
+                          <div className="text-[10px] text-[var(--text-secondary)]">
+                            Updated: {new Date(task.updatedAt).toLocaleDateString()}
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSelectedTask(task._id); }}
+                            className="text-[10px] text-[var(--accent-blue)] hover:underline"
+                          >
+                            Open full detail
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
