@@ -969,15 +969,19 @@ function ContentQueue() {
   const agents = useQuery(api.agents.list);
   const approve = useMutation(api.content.approve);
   const publish = useMutation(api.content.publish);
+  const reject = useMutation(api.content.reject);
+  const addFeedback = useMutation(api.content.addFeedback);
   const generateImageAction = useAction(api.content.generateImage);
   const [filter, setFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [feedbackInputId, setFeedbackInputId] = useState<string | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
 
   if (!content || !agents) return <div className="text-[var(--text-secondary)]">Loading content...</div>;
 
   const agentMap = new Map(agents.map((a) => [a._id, a]));
-  const statuses = ["all", "draft", "approved", "ready", "published"] as const;
+  const statuses = ["all", "draft", "approved", "ready", "published", "rejected"] as const;
   const filtered = filter === "all" ? content : content.filter((c) => c.status === filter);
 
   const counts: Record<string, number> = {};
@@ -991,6 +995,7 @@ function ContentQueue() {
     image_generating: { color: "var(--accent-blue)", bg: "rgba(68,102,255,0.12)" },
     ready: { color: "var(--accent-green)", bg: "rgba(34,204,136,0.12)" },
     published: { color: "var(--text-secondary)", bg: "rgba(136,136,170,0.08)" },
+    rejected: { color: "var(--accent-red)", bg: "rgba(255,68,68,0.12)" },
   };
 
   const copyText = async (id: string, text: string) => {
@@ -1000,6 +1005,17 @@ function ContentQueue() {
   };
 
   const handleApprove = async (id: Id<"content">) => { await approve({ id }); };
+  const handleReject = async (id: Id<"content">) => {
+    await reject({ id, feedback: feedbackText || undefined });
+    setFeedbackText("");
+    setFeedbackInputId(null);
+  };
+  const handleSubmitFeedback = async (id: Id<"content">) => {
+    if (!feedbackText.trim()) return;
+    await addFeedback({ id, feedback: feedbackText.trim() });
+    setFeedbackText("");
+    setFeedbackInputId(null);
+  };
   const handleGenerateImage = async (id: Id<"content">, text: string, pillar?: string) => {
     try { await generateImageAction({ id, text, pillar }); } catch (e) { console.error("Image generation failed:", e); }
   };
@@ -1054,6 +1070,18 @@ function ContentQueue() {
               {isExpanded && (
                 <div className="px-4 pb-4 border-t border-[var(--border)]">
                   <div className="text-sm leading-relaxed whitespace-pre-wrap py-3 text-[var(--text-secondary)]">{item.text}</div>
+
+                  {/* Existing feedback display */}
+                  {item.feedback && (
+                    <div className="mb-3 p-2 bg-[var(--accent-yellow)]/10 border border-[var(--accent-yellow)]/20 rounded-lg">
+                      <div className="text-[10px] font-semibold text-[var(--accent-yellow)] mb-0.5">Feedback</div>
+                      <div className="text-xs text-[var(--text-primary)]">{item.feedback}</div>
+                      {item.feedbackAt && (
+                        <div className="text-[10px] text-[var(--text-secondary)] mt-1">{new Date(item.feedbackAt).toLocaleString()}</div>
+                      )}
+                    </div>
+                  )}
+
                   {item.imageUrl && !item.imageUrl.startsWith("error:") && (
                     <div className="mb-3 p-2 bg-[var(--bg-primary)] rounded-lg border border-[var(--border)]">
                       <div className="text-[10px] text-[var(--accent-green)] mb-1">Image generated</div>
@@ -1066,17 +1094,59 @@ function ContentQueue() {
                       <div className="text-[10px] text-[var(--text-secondary)] mt-1">Click &quot;Generate Image&quot; to retry</div>
                     </div>
                   )}
-                  <div className="flex items-center justify-between">
+
+                  {/* Feedback input */}
+                  {feedbackInputId === item._id ? (
+                    <div className="mb-3 space-y-2">
+                      <textarea
+                        value={feedbackText}
+                        onChange={(e) => setFeedbackText(e.target.value)}
+                        placeholder="Write feedback for this content..."
+                        className="w-full text-sm bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)] resize-none"
+                        rows={3}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleSubmitFeedback(item._id as Id<"content">); }}
+                          disabled={!feedbackText.trim()}
+                          className="px-3 py-1.5 text-xs rounded-lg font-medium bg-[var(--accent-blue)] text-white hover:opacity-90 transition-opacity disabled:opacity-40"
+                        >
+                          Submit Feedback
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setFeedbackInputId(null); setFeedbackText(""); }}
+                          className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)] transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-[10px] text-[var(--text-secondary)]">{item.text.length} chars · {item.platform}</span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button onClick={(e) => { e.stopPropagation(); copyText(item._id, item.text); }}
                         className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)] transition-colors">
                         {copiedId === item._id ? "Copied" : "Copy"}
                       </button>
-                      {item.status === "draft" && (
+                      {feedbackInputId !== item._id && (
+                        <button onClick={(e) => { e.stopPropagation(); setFeedbackInputId(item._id); setFeedbackText(item.feedback || ""); }}
+                          className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-yellow)] hover:text-[var(--accent-yellow)] transition-colors">
+                          Feedback
+                        </button>
+                      )}
+                      {(item.status === "draft" || item.status === "rejected") && (
                         <button onClick={(e) => { e.stopPropagation(); handleApprove(item._id as Id<"content">); }}
                           className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors" style={{ background: "rgba(136,68,255,0.15)", color: "var(--accent-purple)" }}>
                           Approve
+                        </button>
+                      )}
+                      {item.status !== "rejected" && item.status !== "published" && (
+                        <button onClick={(e) => { e.stopPropagation(); handleReject(item._id as Id<"content">); }}
+                          className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors" style={{ background: "rgba(255,68,68,0.15)", color: "var(--accent-red)" }}>
+                          Reject
                         </button>
                       )}
                       {item.status === "approved" && (

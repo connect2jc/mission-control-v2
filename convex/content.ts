@@ -177,6 +177,26 @@ export const revertToApproved = mutation({
   },
 });
 
+export const reject = mutation({
+  args: { id: v.id("content"), feedback: v.optional(v.string()) },
+  handler: async (ctx, { id, feedback }) => {
+    await ctx.db.patch(id, {
+      status: "rejected",
+      ...(feedback ? { feedback, feedbackAt: Date.now() } : {}),
+    });
+  },
+});
+
+export const addFeedback = mutation({
+  args: { id: v.id("content"), feedback: v.string() },
+  handler: async (ctx, { id, feedback }) => {
+    await ctx.db.patch(id, {
+      feedback,
+      feedbackAt: Date.now(),
+    });
+  },
+});
+
 export const remove = mutation({
   args: { id: v.id("content") },
   handler: async (ctx, { id }) => {

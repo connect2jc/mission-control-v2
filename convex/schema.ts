@@ -117,11 +117,14 @@ export default defineSchema({
       v.literal("approved"),
       v.literal("image_generating"),
       v.literal("ready"),
-      v.literal("published")
+      v.literal("published"),
+      v.literal("rejected")
     ),
     imageUrl: v.optional(v.string()),
     imageStorageId: v.optional(v.id("_storage")),
     agentId: v.optional(v.id("agents")),
+    feedback: v.optional(v.string()),
+    feedbackAt: v.optional(v.number()),
     approvedAt: v.optional(v.number()),
     publishedAt: v.optional(v.number()),
     createdAt: v.number(),
