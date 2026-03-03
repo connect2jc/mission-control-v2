@@ -53,10 +53,12 @@ export const setCurrentTask = mutation({
   args: {
     id: v.id("agents"),
     currentTask: v.string(),
+    currentStatus: v.optional(v.union(v.literal("working"), v.literal("idle"), v.literal("blocked"))),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
       currentTask: args.currentTask,
+      currentStatus: args.currentStatus ?? "working",
       lastHeartbeat: Date.now(),
     });
   },

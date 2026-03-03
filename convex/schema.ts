@@ -13,6 +13,7 @@ export default defineSchema({
     model: v.optional(v.string()),
     channel: v.optional(v.string()),
     currentTask: v.optional(v.string()),
+    currentStatus: v.optional(v.union(v.literal("working"), v.literal("idle"), v.literal("blocked"))),
   })
     .index("by_name", ["name"])
     .index("by_status", ["status"]),

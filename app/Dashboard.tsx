@@ -500,22 +500,31 @@ function OverviewTab() {
         <div>
           <h2 className="text-sm font-semibold mb-2 text-[var(--text-secondary)] uppercase tracking-wide">Agents</h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {agents.map((agent) => (
-              <div key={agent._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3 hover:bg-[var(--bg-hover)] transition-colors">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">{agent.emoji}</span>
-                  <span className="font-medium text-sm capitalize">{agent.name}</span>
-                  <StatusDot status={agent.status} />
-                </div>
-                <div className="text-xs text-[var(--text-secondary)]">{agent.role}</div>
-                {agent.currentTask && (
-                  <div className="text-[10px] text-[var(--accent-yellow)] mt-0.5 truncate" title={agent.currentTask}>
-                    ⚙️ {agent.currentTask}
+            {agents.map((agent) => {
+              const taskStatus = agent.currentStatus ?? (agent.currentTask ? "working" : "idle");
+              const taskDotColor = taskStatus === "working" ? "bg-green-400" : taskStatus === "blocked" ? "bg-red-400" : "bg-gray-400";
+              const taskDotClass = taskStatus === "working" ? `${taskDotColor} animate-pulse` : taskDotColor;
+              return (
+                <div key={agent._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3 hover:bg-[var(--bg-hover)] transition-colors">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">{agent.emoji}</span>
+                    <span className="font-medium text-sm capitalize">{agent.name}</span>
+                    <span className={`inline-block w-2 h-2 rounded-full ${taskDotClass}`} />
                   </div>
-                )}
-                {agent.lastHeartbeat && <div className="mt-1"><TimeAgo timestamp={agent.lastHeartbeat} /></div>}
-              </div>
-            ))}
+                  <div className="text-xs text-[var(--text-secondary)]">{agent.role}</div>
+                  <div className="text-[10px] mt-0.5 truncate" title={agent.currentTask || "Awaiting task"}>
+                    {taskStatus === "working" && agent.currentTask ? (
+                      <span className="text-[var(--accent-green)]">⚙️ {agent.currentTask}</span>
+                    ) : taskStatus === "blocked" ? (
+                      <span className="text-[var(--accent-red)]">🚫 {agent.currentTask || "Blocked"}</span>
+                    ) : (
+                      <span className="text-[var(--text-secondary)]">Awaiting task</span>
+                    )}
+                  </div>
+                  {agent.lastHeartbeat && <div className="mt-1"><TimeAgo timestamp={agent.lastHeartbeat} /></div>}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -583,20 +592,40 @@ function AgentsTab() {
         {agents.map((agent) => {
           const recentActs = actByAgent.get(agent._id) || [];
           const currentTask = taskByAgent.get(agent.name);
+          const displayTask = agent.currentTask || currentTask;
+          const taskStatus = agent.currentStatus ?? (displayTask ? "working" : "idle");
+          const taskDotColor = taskStatus === "working" ? "bg-green-400" : taskStatus === "blocked" ? "bg-red-400" : "bg-gray-400";
+          const taskDotClass = taskStatus === "working" ? `${taskDotColor} animate-pulse` : taskDotColor;
+          const borderClass = taskStatus === "working" ? "border-[var(--accent-green)]/40" : taskStatus === "blocked" ? "border-[var(--accent-red)]/40" : "border-[var(--border)]";
           return (
-            <div key={agent._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+            <div key={agent._id} className={`bg-[var(--bg-card)] border ${borderClass} rounded-lg p-4`}>
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-2xl">{agent.emoji}</span>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold capitalize">{agent.name}</span>
-                    <StatusDot status={agent.status} />
-                    <span className="text-xs text-[var(--text-secondary)]">{agent.status}</span>
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${taskDotClass}`} />
+                    <span className="text-xs text-[var(--text-secondary)] capitalize">{taskStatus}</span>
                   </div>
                   <div className="text-xs text-[var(--text-secondary)]">{agent.role}</div>
                 </div>
                 {agent.lastHeartbeat && <TimeAgo timestamp={agent.lastHeartbeat} />}
               </div>
+
+              {/* Current task display */}
+              <div className="mb-3 p-2 rounded-lg bg-[var(--bg-primary)]">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${taskDotClass}`} />
+                  {displayTask ? (
+                    <span className={taskStatus === "blocked" ? "text-[var(--accent-red)]" : "text-[var(--accent-green)]"}>
+                      {displayTask}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--text-secondary)]">Awaiting task</span>
+                  )}
+                </div>
+              </div>
+
               <div className="text-xs space-y-1">
                 <div className="flex gap-2">
                   <span className="text-[var(--text-secondary)] w-16">Model</span>
@@ -606,12 +635,6 @@ function AgentsTab() {
                   <span className="text-[var(--text-secondary)] w-16">Channel</span>
                   <span>{agent.channel || "—"}</span>
                 </div>
-                {(agent.currentTask || currentTask) && (
-                  <div className="flex gap-2">
-                    <span className="text-[var(--text-secondary)] w-16">Task</span>
-                    <span className="text-[var(--accent-yellow)]">⚙️ {agent.currentTask || currentTask}</span>
-                  </div>
-                )}
               </div>
               {recentActs.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1">
