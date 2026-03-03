@@ -1,6 +1,17 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
+export const listAll = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 200;
+    return await ctx.db
+      .query("memories")
+      .order("desc")
+      .take(limit);
+  },
+});
+
 export const listByAgent = query({
   args: { agentId: v.id("agents"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {

@@ -1410,16 +1410,17 @@ function ActivityFeed() {
 // ─── Memories Tab ───────────────────────────────────────────────────
 
 function MemoriesTab() {
-  const memories = useQuery(api.memories.listCritical, { limit: 50 });
+  const memories = useQuery(api.memories.listAll, { limit: 200 });
   const agents = useQuery(api.agents.list);
   const [catFilter, setCatFilter] = useState<string>("all");
-  const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [agentFilterName, setAgentFilterName] = useState<string>("all");
+  const [search, setSearch] = useState("");
 
   if (!memories || !agents) return <div className="text-[var(--text-secondary)]">Loading...</div>;
 
   const agentMap = new Map(agents.map((a) => [a._id, a]));
 
-  const categories = ["all", ...new Set(memories.map((m) => m.category))];
+  const allCategories = ["all", "decision", "lesson", "preference", "task_outcome", "insight", "conversation", "other"];
   const agentOptions = ["all", ...new Set(memories.map((m) => {
     const a = agentMap.get(m.agentId);
     return a?.name || "";
@@ -1427,10 +1428,14 @@ function MemoriesTab() {
 
   let filtered = memories;
   if (catFilter !== "all") filtered = filtered.filter((m) => m.category === catFilter);
-  if (agentFilter !== "all") filtered = filtered.filter((m) => {
+  if (agentFilterName !== "all") filtered = filtered.filter((m) => {
     const a = agentMap.get(m.agentId);
-    return a?.name === agentFilter;
+    return a?.name === agentFilterName;
   });
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter((m) => m.content.toLowerCase().includes(q));
+  }
 
   const categoryColors: Record<string, string> = {
     decision: "bg-purple-500/15 text-purple-600", lesson: "bg-yellow-500/15 text-yellow-700",
@@ -1439,41 +1444,85 @@ function MemoriesTab() {
     other: "bg-gray-500/15 text-gray-600",
   };
 
+  const importanceColors: Record<string, string> = {
+    critical: "text-[var(--accent-red)]",
+    high: "text-[var(--accent-yellow)]",
+    medium: "text-[var(--text-secondary)]",
+    low: "text-[var(--text-secondary)]",
+  };
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h2 className="text-lg font-semibold">Memories ({filtered.length})</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search memories..."
+            className="text-xs bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)] w-40"
+          />
           <select
             value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
             className="text-xs bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)]"
           >
-            {categories.map((c) => <option key={c} value={c}>{c === "all" ? "All categories" : c}</option>)}
+            {allCategories.map((c) => <option key={c} value={c}>{c === "all" ? "All categories" : c.replace("_", " ")}</option>)}
           </select>
           <select
-            value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)}
+            value={agentFilterName} onChange={(e) => setAgentFilterName(e.target.value)}
             className="text-xs bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text-primary)]"
           >
             {agentOptions.map((a) => <option key={a} value={a}>{a === "all" ? "All agents" : a}</option>)}
           </select>
         </div>
       </div>
-      <div className="space-y-1">
+
+      {/* Category quick filters */}
+      <div className="flex gap-1 mb-3 flex-wrap">
+        {allCategories.map((c) => (
+          <button
+            key={c}
+            onClick={() => setCatFilter(c)}
+            className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
+              catFilter === c
+                ? "bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white"
+                : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
+            }`}
+          >
+            {c === "all" ? "All" : c.replace("_", " ")}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-1.5">
         {filtered.length === 0 && (
-          <div className="text-center py-8 text-xs text-[var(--text-secondary)]">No memories match filters</div>
+          <div className="text-center py-8 text-[var(--text-secondary)]">
+            <div className="text-3xl mb-3">🧠</div>
+            <div className="text-sm">No memories match filters</div>
+            {search && <div className="text-xs mt-1">Try a different search term</div>}
+          </div>
         )}
         {filtered.map((mem) => {
           const agent = agentMap.get(mem.agentId);
           return (
-            <div key={mem._id} className="p-3 bg-[var(--bg-card)] border border-[var(--border)] rounded hover:bg-[var(--bg-hover)] transition-colors">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                {agent && <span className="text-xs capitalize">{agent.emoji} {agent.name}</span>}
-                <span className={`px-1.5 py-0.5 text-[10px] rounded ${categoryColors[mem.category] || categoryColors.other}`}>{mem.category}</span>
-                {Number(mem.importance) >= 8 && <span className="text-[10px] text-[var(--accent-red)]">important</span>}
+            <div key={mem._id} className="p-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg hover:bg-[var(--bg-hover)] transition-colors">
+              <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                {agent && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--accent-blue)] capitalize">
+                    {agent.emoji} {agent.name}
+                  </span>
+                )}
+                <span className={`px-1.5 py-0.5 text-[10px] rounded ${categoryColors[mem.category] || categoryColors.other}`}>
+                  {mem.category.replace("_", " ")}
+                </span>
+                <span className={`text-[10px] font-medium ${importanceColors[mem.importance] || ""}`}>
+                  {mem.importance === "critical" || mem.importance === "high" ? mem.importance : ""}
+                </span>
                 <span className="flex-1" />
                 <TimeAgo timestamp={mem.createdAt} />
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">{mem.content}</div>
+              <div className="text-xs text-[var(--text-primary)] leading-relaxed">{mem.content}</div>
             </div>
           );
         })}
