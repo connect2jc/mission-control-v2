@@ -469,7 +469,7 @@ function TaskDetailModal({
 
 // ─── Overview Tab ───────────────────────────────────────────────────
 
-function OverviewTab() {
+function OverviewTab({ onAgentClick }: { onAgentClick?: (agentId: string) => void }) {
   const agents = useQuery(api.agents.list);
   const tasks = useQuery(api.tasks.list);
   const activities = useQuery(api.activities.list, { limit: 5 });
@@ -505,7 +505,11 @@ function OverviewTab() {
               const taskDotColor = taskStatus === "working" ? "bg-green-400" : taskStatus === "blocked" ? "bg-red-400" : "bg-gray-400";
               const taskDotClass = taskStatus === "working" ? `${taskDotColor} animate-pulse` : taskDotColor;
               return (
-                <div key={agent._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3 hover:bg-[var(--bg-hover)] transition-colors">
+                <div
+                  key={agent._id}
+                  className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3 hover:bg-[var(--bg-hover)] transition-colors cursor-pointer hover:border-[var(--accent-blue)]/50"
+                  onClick={() => onAgentClick?.(agent._id)}
+                >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-lg">{agent.emoji}</span>
                     <span className="font-medium text-sm capitalize">{agent.name}</span>
@@ -555,10 +559,11 @@ function OverviewTab() {
 
 // ─── Agents Tab ─────────────────────────────────────────────────────
 
-function AgentsTab() {
+function AgentsTab({ onAgentClick }: { onAgentClick?: (agentId: string) => void }) {
   const agents = useQuery(api.agents.list);
   const activities = useQuery(api.activities.list, { limit: 50 });
   const tasks = useQuery(api.tasks.list);
+  const [sortBy, setSortBy] = useState<"active" | "idle" | "alpha">("active");
 
   if (!agents) return <div className="text-[var(--text-secondary)]">Loading agents...</div>;
 
@@ -585,11 +590,36 @@ function AgentsTab() {
     }
   }
 
+  const sortedAgents = [...agents].sort((a, b) => {
+    if (sortBy === "alpha") return a.name.localeCompare(b.name);
+    const aWorking = a.currentStatus === "working" || a.currentTask ? 1 : 0;
+    const bWorking = b.currentStatus === "working" || b.currentTask ? 1 : 0;
+    if (sortBy === "active") return bWorking - aWorking;
+    return aWorking - bWorking;
+  });
+
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-semibold">Agents ({agents.length})</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Agents ({agents.length})</h2>
+        <div className="flex gap-1">
+          {(["active", "idle", "alpha"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSortBy(s)}
+              className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                sortBy === s
+                  ? "bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white"
+                  : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
+              }`}
+            >
+              {s === "active" ? "Active first" : s === "idle" ? "Idle first" : "A-Z"}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {agents.map((agent) => {
+        {sortedAgents.map((agent) => {
           const recentActs = actByAgent.get(agent._id) || [];
           const currentTask = taskByAgent.get(agent.name);
           const displayTask = agent.currentTask || currentTask;
@@ -598,7 +628,11 @@ function AgentsTab() {
           const taskDotClass = taskStatus === "working" ? `${taskDotColor} animate-pulse` : taskDotColor;
           const borderClass = taskStatus === "working" ? "border-[var(--accent-green)]/40" : taskStatus === "blocked" ? "border-[var(--accent-red)]/40" : "border-[var(--border)]";
           return (
-            <div key={agent._id} className={`bg-[var(--bg-card)] border ${borderClass} rounded-lg p-4`}>
+            <div
+              key={agent._id}
+              className={`bg-[var(--bg-card)] border ${borderClass} rounded-lg p-4 cursor-pointer hover:border-[var(--accent-blue)]/50 transition-colors`}
+              onClick={() => onAgentClick?.(agent._id)}
+            >
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-2xl">{agent.emoji}</span>
                 <div className="flex-1">
@@ -656,12 +690,13 @@ function AgentsTab() {
 
 // ─── Tasks Tab ──────────────────────────────────────────────────────
 
-function TaskBoard() {
+function TaskBoard({ agentFilter, onClearAgentFilter }: { agentFilter?: string | null; onClearAgentFilter?: () => void }) {
   const tasks = useQuery(api.tasks.list);
   const agents = useQuery(api.agents.list);
   const [filter, setFilter] = useState<string>("all");
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   if (!tasks || !agents) return <div className="text-[var(--text-secondary)]">Loading tasks...</div>;
+  const filterAgent = agentFilter ? agents.find((a) => a._id === agentFilter) : null;
 
   const columns = ["backlog", "todo", "in_progress", "done", "blocked"] as const;
   const columnLabels: Record<string, string> = {
@@ -688,12 +723,26 @@ function TaskBoard() {
   const categories = ["all", ...new Set(tasks.map((t) => t.category).filter(Boolean))];
   // Map "review" status tasks into "in_progress" column for display
   const normalizedTasks = tasks.map((t) => t.status === "review" ? { ...t, status: "in_progress" as const } : t);
-  const filtered = filter === "all" ? normalizedTasks : normalizedTasks.filter((t) => t.category === filter);
+  const categoryFiltered = filter === "all" ? normalizedTasks : normalizedTasks.filter((t) => t.category === filter);
+  const filtered = agentFilter ? categoryFiltered.filter((t) => t.assigneeIds.includes(agentFilter as Id<"agents">)) : categoryFiltered;
 
   const openTask = selectedTask ? tasks.find((t) => t._id === selectedTask) : null;
 
   return (
     <div>
+      {filterAgent && (
+        <div className="flex items-center gap-2 mb-3 p-2 bg-[var(--accent-blue)]/10 border border-[var(--accent-blue)]/20 rounded-lg">
+          <span className="text-xs text-[var(--accent-blue)]">
+            Filtering by: {filterAgent.emoji} {filterAgent.name}
+          </span>
+          <button
+            onClick={onClearAgentFilter}
+            className="text-xs text-[var(--accent-blue)] hover:text-[var(--accent-red)] transition-colors ml-auto"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-semibold">Task Board</h2>
         <div className="flex gap-1 flex-wrap">
@@ -1692,11 +1741,19 @@ function TwitterTrainingTab() {
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [agentFilter, setAgentFilter] = useState<string | null>(null);
+
+  const handleAgentClick = (agentId: string) => {
+    setAgentFilter(agentId);
+    setActiveTab("tasks");
+  };
+
+  const clearAgentFilter = () => setAgentFilter(null);
 
   const panels: Record<Tab, React.ReactNode> = {
-    overview: <OverviewTab />,
-    agents: <AgentsTab />,
-    tasks: <TaskBoard />,
+    overview: <OverviewTab onAgentClick={handleAgentClick} />,
+    agents: <AgentsTab onAgentClick={handleAgentClick} />,
+    tasks: <TaskBoard agentFilter={agentFilter} onClearAgentFilter={clearAgentFilter} />,
     chat: <ChatTab />,
     content: <ContentQueue />,
     twitter: <TwitterTrainingTab />,
