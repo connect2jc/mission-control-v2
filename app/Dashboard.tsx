@@ -640,7 +640,7 @@ function TaskBoard() {
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   if (!tasks || !agents) return <div className="text-[var(--text-secondary)]">Loading tasks...</div>;
 
-  const columns = ["backlog", "todo", "in_progress", "done", "blocked"];
+  const columns = ["backlog", "todo", "in_progress", "done", "blocked"] as const;
   const columnLabels: Record<string, string> = {
     backlog: "Backlog", todo: "To Do", in_progress: "In Progress",
     done: "Done", blocked: "Blocked",
@@ -650,13 +650,22 @@ function TaskBoard() {
     in_progress: "border-[var(--accent-yellow)]", done: "border-[var(--accent-green)]",
     blocked: "border-[var(--accent-red)]",
   };
+  const columnBadgeColors: Record<string, string> = {
+    backlog: "bg-gray-500/15 text-[var(--text-secondary)]",
+    todo: "bg-[var(--accent-blue)]/15 text-[var(--accent-blue)]",
+    in_progress: "bg-[var(--accent-yellow)]/15 text-[var(--accent-yellow)]",
+    done: "bg-[var(--accent-green)]/15 text-[var(--accent-green)]",
+    blocked: "bg-[var(--accent-red)]/15 text-[var(--accent-red)]",
+  };
   const priorityBadge: Record<string, string> = {
     critical: "bg-red-500/15 text-red-600", high: "bg-orange-500/15 text-orange-600",
     medium: "bg-blue-500/15 text-blue-600", low: "bg-gray-500/15 text-gray-600",
   };
 
   const categories = ["all", ...new Set(tasks.map((t) => t.category).filter(Boolean))];
-  const filtered = filter === "all" ? tasks : tasks.filter((t) => t.category === filter);
+  // Map "review" status tasks into "in_progress" column for display
+  const normalizedTasks = tasks.map((t) => t.status === "review" ? { ...t, status: "in_progress" as const } : t);
+  const filtered = filter === "all" ? normalizedTasks : normalizedTasks.filter((t) => t.category === filter);
 
   const openTask = selectedTask ? tasks.find((t) => t._id === selectedTask) : null;
 
@@ -687,7 +696,7 @@ function TaskBoard() {
             <div key={col} className={`border-t-2 ${columnColors[col]} pt-2`}>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold uppercase text-[var(--text-secondary)]">{columnLabels[col]}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--bg-primary)] border border-[var(--border)] text-[var(--text-secondary)]">
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${columnBadgeColors[col]}`}>
                   {colTasks.length}
                 </span>
               </div>
