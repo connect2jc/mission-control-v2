@@ -169,7 +169,7 @@ function Sidebar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 py-2">
+      <nav className="flex-1 py-2 overflow-y-auto">
         {TABS.map((tab) => (
           <button
             key={tab.id}
