@@ -13,6 +13,7 @@ import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
 import type * as comments from "../comments.js";
 import type * as content from "../content.js";
+import type * as cronJobs from "../cronJobs.js";
 import type * as documents from "../documents.js";
 import type * as karma from "../karma.js";
 import type * as memories from "../memories.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   comments: typeof comments;
   content: typeof content;
+  cronJobs: typeof cronJobs;
   documents: typeof documents;
   karma: typeof karma;
   memories: typeof memories;

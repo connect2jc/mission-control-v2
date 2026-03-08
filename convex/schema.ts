@@ -187,6 +187,42 @@ export default defineSchema({
     .index("by_agentName", ["agentName", "earnedAt"])
     .index("by_type", ["type", "earnedAt"]),
 
+  crons: defineTable({
+    jobId: v.string(),
+    name: v.string(),
+    agentId: v.optional(v.string()),
+    enabled: v.boolean(),
+    schedule: v.string(),
+    timezone: v.optional(v.string()),
+    description: v.optional(v.string()),
+    payload: v.optional(v.string()),
+    lastRunAt: v.optional(v.number()),
+    lastStatus: v.union(
+      v.literal("ok"),
+      v.literal("error"),
+      v.literal("timeout"),
+      v.literal("never")
+    ),
+    lastError: v.optional(v.string()),
+    lastDurationMs: v.optional(v.number()),
+    consecutiveErrors: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_jobId", ["jobId"])
+    .index("by_enabled", ["enabled"])
+    .index("by_lastStatus", ["lastStatus"]),
+
+  cron_logs: defineTable({
+    jobId: v.string(),
+    status: v.union(v.literal("ok"), v.literal("error"), v.literal("timeout")),
+    durationMs: v.optional(v.number()),
+    error: v.optional(v.string()),
+    output: v.optional(v.string()),
+    runAt: v.number(),
+  })
+    .index("by_jobId", ["jobId", "runAt"])
+    .index("by_runAt", ["runAt"]),
+
   memories: defineTable({
     agentId: v.id("agents"),
     content: v.string(),

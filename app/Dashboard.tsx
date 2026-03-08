@@ -5,7 +5,7 @@ import { api } from "../convex/_generated/api";
 import { useState, useRef, useEffect } from "react";
 import type { Id } from "../convex/_generated/dataModel";
 
-type Tab = "overview" | "agents" | "tasks" | "chat" | "content" | "twitter" | "products" | "activity" | "memories";
+type Tab = "overview" | "agents" | "tasks" | "chat" | "content" | "twitter" | "products" | "activity" | "memories" | "crons";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "📊" },
@@ -17,6 +17,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "products", label: "Products", icon: "🚀" },
   { id: "activity", label: "Activity", icon: "⚡" },
   { id: "memories", label: "Memories", icon: "🧠" },
+  { id: "crons", label: "Crons", icon: "🕐" },
 ];
 
 // ─── Shared Components ──────────────────────────────────────────────
@@ -2079,10 +2080,263 @@ function TwitterTrainingTab() {
   );
 }
 
+// ─── Crons Tab ──────────────────────────────────────────────────────
+
+function CronLogEntry({ log }: { log: { status: string; runAt: number; durationMs?: number; error?: string; output?: string } }) {
+  const statusIcon = log.status === "ok" ? "🟢" : log.status === "timeout" ? "🟡" : "🔴";
+  const fmtDur = (ms?: number) => {
+    if (!ms) return "-";
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${(ms / 60000).toFixed(1)}m`;
+  };
+  return (
+    <div className={`flex items-start gap-2 py-2 border-b border-[var(--border)] last:border-0 ${log.status !== "ok" ? "bg-red-500/5" : ""}`}>
+      <span className="text-sm mt-0.5">{statusIcon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap gap-x-3 text-xs text-[var(--text-secondary)]">
+          <span>{new Date(log.runAt).toLocaleString()}</span>
+          <span>Duration: {fmtDur(log.durationMs)}</span>
+          <span className={log.status === "ok" ? "text-green-500" : "text-red-400"}>{log.status.toUpperCase()}</span>
+        </div>
+        {log.error && <div className="mt-1 text-xs text-red-400 font-mono">{log.error}</div>}
+        {log.output && <div className="mt-1 text-xs text-[var(--text-secondary)] font-mono whitespace-pre-wrap">{log.output}</div>}
+      </div>
+    </div>
+  );
+}
+
+function CronDetail({ cron }: { cron: { jobId: string; name: string; agentId?: string; schedule: string; timezone?: string; description?: string; payload?: string; enabled: boolean; lastStatus: string; lastError?: string; lastRunAt?: number; lastDurationMs?: number; consecutiveErrors: number } }) {
+  const logs = useQuery(api.cronJobs.getLogs, { jobId: cron.jobId, limit: 20 }) || [];
+  const [showPayload, setShowPayload] = useState(false);
+
+  return (
+    <div className="mt-3 space-y-4 border-t border-[var(--border)] pt-3">
+      {/* Description */}
+      {cron.description && (
+        <div>
+          <div className="text-xs font-semibold text-[var(--text-secondary)] uppercase mb-1">What this job does</div>
+          <div className="text-sm text-[var(--text-primary)] whitespace-pre-wrap">{cron.description}</div>
+        </div>
+      )}
+
+      {/* Job Details Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-[var(--bg-hover)] rounded-lg p-2">
+          <div className="text-[10px] text-[var(--text-secondary)] uppercase">Agent</div>
+          <div className="text-sm font-medium text-[var(--text-primary)]">{cron.agentId || "system"}</div>
+        </div>
+        <div className="bg-[var(--bg-hover)] rounded-lg p-2">
+          <div className="text-[10px] text-[var(--text-secondary)] uppercase">Schedule</div>
+          <div className="text-sm font-mono text-[var(--text-primary)]">{cron.schedule}</div>
+        </div>
+        <div className="bg-[var(--bg-hover)] rounded-lg p-2">
+          <div className="text-[10px] text-[var(--text-secondary)] uppercase">Timezone</div>
+          <div className="text-sm text-[var(--text-primary)]">{cron.timezone || "UTC"}</div>
+        </div>
+        <div className="bg-[var(--bg-hover)] rounded-lg p-2">
+          <div className="text-[10px] text-[var(--text-secondary)] uppercase">Status</div>
+          <div className={`text-sm font-medium ${cron.enabled ? "text-green-500" : "text-[var(--text-secondary)]"}`}>
+            {cron.enabled ? "ENABLED" : "DISABLED"}
+          </div>
+        </div>
+      </div>
+
+      {/* Full Payload / Task Instructions */}
+      {cron.payload && (
+        <div>
+          <button
+            onClick={() => setShowPayload(!showPayload)}
+            className="text-xs font-semibold text-[var(--accent-blue)] hover:underline cursor-pointer"
+          >
+            {showPayload ? "Hide" : "Show"} Task Instructions & Tools
+          </button>
+          {showPayload && (
+            <div className="mt-2 p-3 bg-[var(--bg-hover)] rounded-lg text-xs font-mono text-[var(--text-primary)] whitespace-pre-wrap overflow-x-auto max-h-80 overflow-y-auto">
+              {cron.payload}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Run History / Logs */}
+      <div>
+        <div className="text-xs font-semibold text-[var(--text-secondary)] uppercase mb-2">
+          Run History ({logs.length} recent runs)
+        </div>
+        {logs.length > 0 ? (
+          <div className="bg-[var(--bg-hover)] rounded-lg p-2 max-h-60 overflow-y-auto">
+            {logs.map((log) => (
+              <CronLogEntry key={log._id} log={log} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs text-[var(--text-secondary)] italic">No run logs yet. Logs are recorded on each sync.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CronsTab() {
+  const allCrons = useQuery(api.cronJobs.list) || [];
+  const stats = useQuery(api.cronJobs.getStats);
+  const [filter, setFilter] = useState<"all" | "enabled" | "failed" | "disabled">("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const filtered = allCrons.filter((c) => {
+    if (filter === "enabled") return c.enabled;
+    if (filter === "failed") return c.lastStatus === "error" || c.lastStatus === "timeout";
+    if (filter === "disabled") return !c.enabled;
+    return true;
+  }).sort((a, b) => {
+    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+    return (b.lastRunAt || 0) - (a.lastRunAt || 0);
+  });
+
+  const statusIcon = (s: string) => {
+    if (s === "ok") return "🟢";
+    if (s === "error") return "🔴";
+    if (s === "timeout") return "🟡";
+    return "⚪";
+  };
+
+  const formatDuration = (ms: number | undefined) => {
+    if (!ms) return "-";
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${(ms / 60000).toFixed(1)}m`;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">Cron Jobs</h2>
+        <div className="text-sm text-[var(--text-secondary)]">
+          Last synced: {allCrons.length > 0 ? new Date(Math.max(...allCrons.map(c => c.updatedAt))).toLocaleString() : "never"}
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+          {[
+            { label: "Total", value: stats.total, color: "var(--text-primary)" },
+            { label: "Enabled", value: stats.enabled, color: "var(--accent-blue)" },
+            { label: "Healthy", value: stats.healthy, color: "#22c55e" },
+            { label: "Failed", value: stats.failed, color: "#ef4444" },
+            { label: "Stale", value: stats.stale, color: "#f59e0b" },
+            { label: "Disabled", value: stats.disabled, color: "var(--text-secondary)" },
+          ].map((s) => (
+            <div key={s.label} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-3 text-center">
+              <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>
+              <div className="text-xs text-[var(--text-secondary)]">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex gap-2">
+        {(["all", "enabled", "failed", "disabled"] as const).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+              filter === f
+                ? "bg-[var(--accent-blue)] text-white"
+                : "bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+            }`}
+          >
+            {f.charAt(0).toUpperCase() + f.slice(1)}
+            {f === "all" && ` (${allCrons.length})`}
+            {f === "enabled" && ` (${allCrons.filter(c => c.enabled).length})`}
+            {f === "failed" && ` (${allCrons.filter(c => c.lastStatus === "error" || c.lastStatus === "timeout").length})`}
+            {f === "disabled" && ` (${allCrons.filter(c => !c.enabled).length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Cron List */}
+      <div className="space-y-2">
+        {filtered.map((cron) => {
+          const isExpanded = expandedId === cron.jobId;
+          return (
+            <div
+              key={cron._id}
+              className={`bg-[var(--bg-card)] border rounded-xl p-4 transition-all ${
+                cron.lastStatus === "error" || cron.lastStatus === "timeout"
+                  ? "border-red-500/30"
+                  : cron.enabled
+                  ? "border-[var(--border)]"
+                  : "border-[var(--border)] opacity-60"
+              }`}
+            >
+              <div
+                className="flex items-start justify-between gap-4 cursor-pointer"
+                onClick={() => setExpandedId(isExpanded ? null : cron.jobId)}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span>{statusIcon(cron.lastStatus)}</span>
+                    <span className="font-medium text-[var(--text-primary)] truncate">{cron.name}</span>
+                    {!cron.enabled && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-gray-500/20 text-[var(--text-secondary)]">
+                        DISABLED
+                      </span>
+                    )}
+                    {cron.agentId && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]">
+                        {cron.agentId}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-[var(--text-secondary)]">
+                    <span>Schedule: <code className="bg-[var(--bg-hover)] px-1 rounded">{cron.schedule}</code></span>
+                    {cron.timezone && <span>TZ: {cron.timezone}</span>}
+                    {cron.lastRunAt && <span>Last run: <TimeAgo timestamp={cron.lastRunAt} /></span>}
+                    {cron.lastDurationMs !== undefined && <span>Duration: {formatDuration(cron.lastDurationMs)}</span>}
+                    {cron.consecutiveErrors > 0 && (
+                      <span className="text-red-400">{cron.consecutiveErrors} consecutive errors</span>
+                    )}
+                  </div>
+
+                  {!isExpanded && cron.description && (
+                    <div className="mt-1 text-xs text-[var(--text-secondary)] truncate">{cron.description}</div>
+                  )}
+
+                  {!isExpanded && cron.lastError && (
+                    <div className="mt-2 p-2 rounded-lg bg-red-500/10 text-xs text-red-400 font-mono truncate">
+                      {cron.lastError}
+                    </div>
+                  )}
+                </div>
+
+                <span className="text-[var(--text-secondary)] text-sm mt-1 shrink-0">
+                  {isExpanded ? "▲" : "▼"}
+                </span>
+              </div>
+
+              {isExpanded && <CronDetail cron={cron} />}
+            </div>
+          );
+        })}
+
+        {filtered.length === 0 && (
+          <div className="text-center text-[var(--text-secondary)] py-8">
+            No cron jobs match this filter
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Dashboard ─────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("crons");
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
 
   const handleAgentClick = (agentId: string) => {
@@ -2102,6 +2356,7 @@ export default function Dashboard() {
     products: <ProductsTab />,
     activity: <ActivityFeed />,
     memories: <MemoriesTab />,
+    crons: <CronsTab />,
   };
 
   return (
