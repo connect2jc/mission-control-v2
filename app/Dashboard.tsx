@@ -5,7 +5,7 @@ import { api } from "../convex/_generated/api";
 import { useState, useRef, useEffect } from "react";
 import type { Id } from "../convex/_generated/dataModel";
 
-type Tab = "overview" | "agents" | "tasks" | "chat" | "content" | "twitter" | "products" | "activity" | "memories" | "crons";
+type Tab = "overview" | "agents" | "tasks" | "chat" | "content" | "twitter" | "products" | "activity" | "memories" | "crons" | "logs";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "📊" },
@@ -18,6 +18,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "activity", label: "Activity", icon: "⚡" },
   { id: "memories", label: "Memories", icon: "🧠" },
   { id: "crons", label: "Crons", icon: "🕐" },
+  { id: "logs", label: "Logs", icon: "📜" },
 ];
 
 // ─── Shared Components ──────────────────────────────────────────────
@@ -2082,8 +2083,9 @@ function TwitterTrainingTab() {
 
 // ─── Crons Tab ──────────────────────────────────────────────────────
 
-function CronLogEntry({ log }: { log: { status: string; runAt: number; durationMs?: number; error?: string; output?: string } }) {
+function CronLogEntry({ log }: { log: { status: string; runAt: number; durationMs?: number; error?: string; output?: string; summary?: string; model?: string; tokensUsed?: number } }) {
   const statusIcon = log.status === "ok" ? "🟢" : log.status === "timeout" ? "🟡" : "🔴";
+  const [showSummary, setShowSummary] = useState(false);
   const fmtDur = (ms?: number) => {
     if (!ms) return "-";
     if (ms < 1000) return `${ms}ms`;
@@ -2091,17 +2093,29 @@ function CronLogEntry({ log }: { log: { status: string; runAt: number; durationM
     return `${(ms / 60000).toFixed(1)}m`;
   };
   return (
-    <div className={`flex items-start gap-2 py-2 border-b border-[var(--border)] last:border-0 ${log.status !== "ok" ? "bg-red-500/5" : ""}`}>
-      <span className="text-sm mt-0.5">{statusIcon}</span>
-      <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap gap-x-3 text-xs text-[var(--text-secondary)]">
-          <span>{new Date(log.runAt).toLocaleString()}</span>
-          <span>Duration: {fmtDur(log.durationMs)}</span>
-          <span className={log.status === "ok" ? "text-green-500" : "text-red-400"}>{log.status.toUpperCase()}</span>
+    <div className={`py-2 border-b border-[var(--border)] last:border-0 ${log.status !== "ok" ? "bg-red-500/5" : ""}`}>
+      <div
+        className={`flex items-start gap-2 ${log.summary ? "cursor-pointer" : ""}`}
+        onClick={() => log.summary && setShowSummary(!showSummary)}
+      >
+        <span className="text-sm mt-0.5">{statusIcon}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap gap-x-3 text-xs text-[var(--text-secondary)]">
+            <span>{new Date(log.runAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</span>
+            <span>Duration: {fmtDur(log.durationMs)}</span>
+            <span className={log.status === "ok" ? "text-green-500" : "text-red-400"}>{log.status.toUpperCase()}</span>
+            {log.model && <span>{log.model}</span>}
+            {log.tokensUsed && <span>{(log.tokensUsed / 1000).toFixed(1)}K tok</span>}
+          </div>
+          {log.error && <div className="mt-1 text-xs text-red-400 font-mono">{log.error}</div>}
         </div>
-        {log.error && <div className="mt-1 text-xs text-red-400 font-mono">{log.error}</div>}
-        {log.output && <div className="mt-1 text-xs text-[var(--text-secondary)] font-mono whitespace-pre-wrap">{log.output}</div>}
+        {log.summary && <span className="text-[var(--text-secondary)] text-xs shrink-0">{showSummary ? "▲" : "▼"}</span>}
       </div>
+      {showSummary && log.summary && (
+        <div className="mt-2 ml-6 p-2 rounded-lg bg-[var(--bg-primary)] text-xs text-[var(--text-primary)] whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed">
+          {log.summary}
+        </div>
+      )}
     </div>
   );
 }
@@ -2333,6 +2347,237 @@ function CronsTab() {
   );
 }
 
+// ─── Logs Tab ────────────────────────────────────────────────────────
+
+function LogsTab() {
+  const [limit, setLimit] = useState(100);
+  const logs = useQuery(api.cronJobs.getRecentLogsWithNames, { limit }) || [];
+  const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Get unique agents from logs
+  const agents = Array.from(new Set(logs.map((l) => l.agentId || "system").filter(Boolean))).sort();
+
+  const filtered = logs.filter((l) => {
+    if (agentFilter !== "all" && (l.agentId || "system") !== agentFilter) return false;
+    if (statusFilter !== "all" && l.status !== statusFilter) return false;
+    return true;
+  });
+
+  const statusIcon = (s: string) => s === "ok" ? "🟢" : s === "timeout" ? "🟡" : "🔴";
+
+  const fmtDur = (ms?: number) => {
+    if (!ms) return null;
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${(ms / 60000).toFixed(1)}m`;
+  };
+
+  const fmtTokens = (t?: number) => {
+    if (!t) return null;
+    if (t < 1000) return `${t} tok`;
+    return `${(t / 1000).toFixed(1)}K tok`;
+  };
+
+  const fmtTime = (ms: number) => {
+    return new Date(ms).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }) + " IST";
+  };
+
+  // Group by date
+  const groupByDate = (entries: typeof filtered) => {
+    const groups: Record<string, typeof filtered> = {};
+    for (const entry of entries) {
+      const dateKey = new Date(entry.runAt).toLocaleDateString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(entry);
+    }
+    return groups;
+  };
+
+  const grouped = groupByDate(filtered);
+
+  // Stats
+  const okCount = filtered.filter((l) => l.status === "ok").length;
+  const errorCount = filtered.filter((l) => l.status === "error").length;
+  const timeoutCount = filtered.filter((l) => l.status === "timeout").length;
+  const totalTokens = filtered.reduce((sum, l) => sum + (l.tokensUsed || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">Run Logs</h2>
+        <div className="text-sm text-[var(--text-secondary)]">
+          {filtered.length} entries {totalTokens > 0 && `· ${fmtTokens(totalTokens)} total`}
+        </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-green-500">{okCount}</div>
+          <div className="text-xs text-[var(--text-secondary)]">OK</div>
+        </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-red-400">{errorCount}</div>
+          <div className="text-xs text-[var(--text-secondary)]">Errors</div>
+        </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-yellow-400">{timeoutCount}</div>
+          <div className="text-xs text-[var(--text-secondary)]">Timeouts</div>
+        </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-[var(--text-primary)]">{fmtTokens(totalTokens) || "0"}</div>
+          <div className="text-xs text-[var(--text-secondary)]">Tokens Used</div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[var(--text-secondary)]">Agent:</span>
+          <select
+            value={agentFilter}
+            onChange={(e) => setAgentFilter(e.target.value)}
+            className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg px-2 py-1 text-sm text-[var(--text-primary)]"
+          >
+            <option value="all">All agents</option>
+            {agents.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[var(--text-secondary)]">Status:</span>
+          <div className="flex gap-1">
+            {["all", "ok", "error", "timeout"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-2 py-1 rounded-lg text-xs transition-colors ${
+                  statusFilter === s
+                    ? "bg-[var(--accent-blue)] text-white"
+                    : "bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                }`}
+              >
+                {s === "all" ? "All" : s === "ok" ? "OK" : s === "error" ? "Errors" : "Timeouts"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Log Entries grouped by date */}
+      <div className="space-y-4">
+        {Object.entries(grouped).map(([date, entries]) => (
+          <div key={date}>
+            <div className="sticky top-0 z-10 bg-[var(--bg-primary)] py-1 mb-2">
+              <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">{date}</span>
+            </div>
+            <div className="space-y-1">
+              {entries.map((log) => {
+                const isExpanded = expandedId === log._id;
+                return (
+                  <div
+                    key={log._id}
+                    className={`bg-[var(--bg-card)] border rounded-lg transition-all ${
+                      log.status !== "ok"
+                        ? "border-red-500/20"
+                        : "border-[var(--border)]"
+                    }`}
+                  >
+                    <div
+                      className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[var(--bg-hover)] rounded-lg"
+                      onClick={() => setExpandedId(isExpanded ? null : log._id)}
+                    >
+                      <span className="text-sm shrink-0">{statusIcon(log.status)}</span>
+                      <span className="text-xs text-[var(--text-secondary)] font-mono shrink-0 w-[130px]">
+                        {fmtTime(log.runAt)}
+                      </span>
+                      <span className="text-sm font-medium text-[var(--text-primary)] truncate min-w-0 flex-1">
+                        {log.jobName}
+                      </span>
+                      {log.agentId && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--accent-blue)]/20 text-[var(--accent-blue)] shrink-0">
+                          {log.agentId}
+                        </span>
+                      )}
+                      <div className="flex gap-3 text-[10px] text-[var(--text-secondary)] shrink-0">
+                        {fmtDur(log.durationMs) && <span>{fmtDur(log.durationMs)}</span>}
+                        {log.model && <span>{log.model.replace("claude-", "").replace("-4-6", "")}</span>}
+                        {fmtTokens(log.tokensUsed) && <span>{fmtTokens(log.tokensUsed)}</span>}
+                      </div>
+                      <span className="text-[var(--text-secondary)] text-xs shrink-0">
+                        {isExpanded ? "▲" : log.summary ? "▼" : ""}
+                      </span>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="px-3 pb-3 space-y-2">
+                        {log.error && (
+                          <div className="p-2 rounded-lg bg-red-500/10 text-xs text-red-400 font-mono">
+                            {log.error}
+                          </div>
+                        )}
+                        {log.summary && (
+                          <div className="p-3 rounded-lg bg-[var(--bg-hover)] text-xs text-[var(--text-primary)] whitespace-pre-wrap max-h-96 overflow-y-auto leading-relaxed">
+                            {log.summary}
+                          </div>
+                        )}
+                        {!log.summary && !log.error && (
+                          <div className="text-xs text-[var(--text-secondary)] italic px-2">No output recorded for this run.</div>
+                        )}
+                        <div className="flex gap-4 text-[10px] text-[var(--text-secondary)] px-2">
+                          {log.sessionId && <span>Session: {log.sessionId.slice(0, 8)}</span>}
+                          {log.model && <span>Model: {log.model}</span>}
+                          {log.tokensUsed && <span>Tokens: {log.tokensUsed.toLocaleString()}</span>}
+                          {log.durationMs && <span>Duration: {fmtDur(log.durationMs)}</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Load More */}
+      {logs.length >= limit && (
+        <div className="text-center">
+          <button
+            onClick={() => setLimit((l) => l + 100)}
+            className="px-4 py-2 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
+          >
+            Load more...
+          </button>
+        </div>
+      )}
+
+      {filtered.length === 0 && (
+        <div className="text-center text-[var(--text-secondary)] py-8">
+          No logs match these filters
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Dashboard ─────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -2357,6 +2602,7 @@ export default function Dashboard() {
     activity: <ActivityFeed />,
     memories: <MemoriesTab />,
     crons: <CronsTab />,
+    logs: <LogsTab />,
   };
 
   return (

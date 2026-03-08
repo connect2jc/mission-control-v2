@@ -218,6 +218,10 @@ export default defineSchema({
     durationMs: v.optional(v.number()),
     error: v.optional(v.string()),
     output: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    model: v.optional(v.string()),
+    tokensUsed: v.optional(v.number()),
+    sessionId: v.optional(v.string()),
     runAt: v.number(),
   })
     .index("by_jobId", ["jobId", "runAt"])

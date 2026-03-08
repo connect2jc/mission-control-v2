@@ -79,9 +79,19 @@ export const addLog = mutation({
     durationMs: v.optional(v.number()),
     error: v.optional(v.string()),
     output: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    model: v.optional(v.string()),
+    tokensUsed: v.optional(v.number()),
+    sessionId: v.optional(v.string()),
     runAt: v.number(),
   },
   handler: async (ctx, args) => {
+    // Deduplicate: skip if same jobId + runAt already exists
+    const existing = await ctx.db
+      .query("cron_logs")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId).eq("runAt", args.runAt))
+      .first();
+    if (existing) return existing._id;
     return await ctx.db.insert("cron_logs", args);
   },
 });
@@ -106,6 +116,40 @@ export const getRecentLogs = query({
       .withIndex("by_runAt")
       .order("desc")
       .take(args.limit || 50);
+  },
+});
+
+export const getRecentLogsWithNames = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const logs = await ctx.db
+      .query("cron_logs")
+      .withIndex("by_runAt")
+      .order("desc")
+      .take(args.limit || 100);
+
+    // Batch lookup cron names
+    const cronCache = new Map<string, { name: string; agentId?: string }>();
+    const enriched = [];
+    for (const log of logs) {
+      if (!cronCache.has(log.jobId)) {
+        const cron = await ctx.db
+          .query("crons")
+          .withIndex("by_jobId", (q) => q.eq("jobId", log.jobId))
+          .first();
+        cronCache.set(log.jobId, {
+          name: cron?.name || log.jobId.slice(0, 8),
+          agentId: cron?.agentId,
+        });
+      }
+      const info = cronCache.get(log.jobId)!;
+      enriched.push({
+        ...log,
+        jobName: info.name,
+        agentId: info.agentId,
+      });
+    }
+    return enriched;
   },
 });
 
