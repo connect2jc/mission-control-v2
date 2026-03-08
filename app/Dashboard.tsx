@@ -1275,7 +1275,7 @@ function ProductsTab() {
   if (!tasks || !agents) return <div className="text-[var(--text-secondary)]">Loading products...</div>;
 
   const products = tasks.filter(
-    (t) => t.category === "product" || t.category === "coding" || t.category === "development"
+    (t) => t.category === "product" || t.category === "coding" || t.category === "development" || t.category === "build" || t.category === "demo"
   );
 
   const filtered = statusFilter === "all" ? products : products.filter((t) => t.status === statusFilter);
@@ -1326,7 +1326,7 @@ function ProductsTab() {
         <div className="text-center py-12 text-[var(--text-secondary)]">
           <div className="text-3xl mb-3">🚀</div>
           <div className="text-sm">No product/coding tasks yet</div>
-          <div className="text-xs mt-1">Tasks with category &quot;product&quot;, &quot;coding&quot;, or &quot;development&quot; appear here</div>
+          <div className="text-xs mt-1">Tasks with category &quot;product&quot;, &quot;coding&quot;, &quot;development&quot;, &quot;build&quot;, or &quot;demo&quot; appear here</div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2380,6 +2380,27 @@ function LogsTab() {
     return `${(t / 1000).toFixed(1)}K tok`;
   };
 
+  // Cost estimation per 1K tokens (blended input/output ~60/40 ratio)
+  const costPer1K: Record<string, number> = {
+    "claude-opus-4-6": 0.039,      // $15/$75 per 1M → blended ~$39/1M
+    "claude-sonnet-4-6": 0.0078,   // $3/$15 per 1M → blended ~$7.8/1M
+    "gpt-4o": 0.0055,              // $2.50/$10 per 1M → blended ~$5.5/1M
+    "gpt-5.1": 0.018,              // $10/$30 per 1M → blended ~$18/1M
+  };
+
+  const estimateCost = (model?: string, tokens?: number) => {
+    if (!model || !tokens) return 0;
+    const rate = costPer1K[model] || 0;
+    return (tokens / 1000) * rate;
+  };
+
+  const fmtCost = (cost: number) => {
+    if (cost === 0) return null;
+    if (cost < 0.01) return `<$0.01`;
+    if (cost < 1) return `$${cost.toFixed(2)}`;
+    return `$${cost.toFixed(2)}`;
+  };
+
   const fmtTime = (ms: number) => {
     return new Date(ms).toLocaleString("en-IN", {
       timeZone: "Asia/Kolkata",
@@ -2416,13 +2437,14 @@ function LogsTab() {
   const errorCount = filtered.filter((l) => l.status === "error").length;
   const timeoutCount = filtered.filter((l) => l.status === "timeout").length;
   const totalTokens = filtered.reduce((sum, l) => sum + (l.tokensUsed || 0), 0);
+  const totalCost = filtered.reduce((sum, l) => sum + estimateCost(l.model, l.tokensUsed), 0);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-[var(--text-primary)]">Run Logs</h2>
         <div className="text-sm text-[var(--text-secondary)]">
-          {filtered.length} entries {totalTokens > 0 && `· ${fmtTokens(totalTokens)} total`}
+          {filtered.length} entries {totalTokens > 0 && `· ${fmtTokens(totalTokens)}`} {totalCost > 0 && `· ~${fmtCost(totalCost)}`}
         </div>
       </div>
 
@@ -2441,8 +2463,8 @@ function LogsTab() {
           <div className="text-xs text-[var(--text-secondary)]">Timeouts</div>
         </div>
         <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-3 text-center">
-          <div className="text-2xl font-bold text-[var(--text-primary)]">{fmtTokens(totalTokens) || "0"}</div>
-          <div className="text-xs text-[var(--text-secondary)]">Tokens Used</div>
+          <div className="text-2xl font-bold text-emerald-400">{fmtCost(totalCost) || "$0"}</div>
+          <div className="text-xs text-[var(--text-secondary)]">Est. Cost · {fmtTokens(totalTokens) || "0 tok"}</div>
         </div>
       </div>
 
@@ -2520,6 +2542,9 @@ function LogsTab() {
                         {fmtDur(log.durationMs) && <span>{fmtDur(log.durationMs)}</span>}
                         {log.model && <span>{log.model.replace("claude-", "").replace("-4-6", "")}</span>}
                         {fmtTokens(log.tokensUsed) && <span>{fmtTokens(log.tokensUsed)}</span>}
+                        {fmtCost(estimateCost(log.model, log.tokensUsed)) && (
+                          <span className="text-emerald-400">{fmtCost(estimateCost(log.model, log.tokensUsed))}</span>
+                        )}
                       </div>
                       <span className="text-[var(--text-secondary)] text-xs shrink-0">
                         {isExpanded ? "▲" : log.summary ? "▼" : ""}
@@ -2545,6 +2570,9 @@ function LogsTab() {
                           {log.sessionId && <span>Session: {log.sessionId.slice(0, 8)}</span>}
                           {log.model && <span>Model: {log.model}</span>}
                           {log.tokensUsed && <span>Tokens: {log.tokensUsed.toLocaleString()}</span>}
+                          {fmtCost(estimateCost(log.model, log.tokensUsed)) && (
+                            <span className="text-emerald-400">Cost: {fmtCost(estimateCost(log.model, log.tokensUsed))}</span>
+                          )}
                           {log.durationMs && <span>Duration: {fmtDur(log.durationMs)}</span>}
                         </div>
                       </div>
