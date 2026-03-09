@@ -16,6 +16,7 @@ import type * as content from "../content.js";
 import type * as cronJobs from "../cronJobs.js";
 import type * as documents from "../documents.js";
 import type * as karma from "../karma.js";
+import type * as linkedinTraining from "../linkedinTraining.js";
 import type * as memories from "../memories.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   cronJobs: typeof cronJobs;
   documents: typeof documents;
   karma: typeof karma;
+  linkedinTraining: typeof linkedinTraining;
   memories: typeof memories;
   messages: typeof messages;
   notifications: typeof notifications;

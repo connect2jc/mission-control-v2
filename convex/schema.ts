@@ -174,6 +174,40 @@ export default defineSchema({
     .index("by_draft", ["draftId", "createdAt"])
     .index("by_createdAt", ["createdAt"]),
 
+  linkedin_drafts: defineTable({
+    content: v.string(),
+    contentType: v.union(v.literal("post"), v.literal("article"), v.literal("comment")),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("posted")
+    ),
+    pillar: v.optional(v.string()),
+    feedback: v.optional(v.string()),
+    feedbackAt: v.optional(v.number()),
+    publishedUrl: v.optional(v.string()),
+    suggestedTime: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_createdAt", ["createdAt"]),
+
+  linkedin_feedback: defineTable({
+    draftId: v.optional(v.id("linkedin_drafts")),
+    feedback: v.string(),
+    category: v.union(
+      v.literal("tone"),
+      v.literal("content"),
+      v.literal("structure"),
+      v.literal("general")
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_category", ["category", "createdAt"])
+    .index("by_draft", ["draftId", "createdAt"])
+    .index("by_createdAt", ["createdAt"]),
+
   karma: defineTable({
     agentName: v.string(),
     agentId: v.id("agents"),
