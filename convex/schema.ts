@@ -261,6 +261,29 @@ export default defineSchema({
     .index("by_jobId", ["jobId", "runAt"])
     .index("by_runAt", ["runAt"]),
 
+  twitter_health: defineTable({
+    followers: v.number(),
+    following: v.number(),
+    avgViews: v.number(),
+    zeroViewTweets: v.number(),
+    searchVisible: v.boolean(),
+    status: v.union(v.literal("healthy"), v.literal("degraded"), v.literal("banned")),
+    issues: v.array(v.string()),
+    cookieAgeDays: v.number(),
+    dailyReplies: v.number(),
+    dailyLikes: v.number(),
+    dailyRetweets: v.number(),
+    queuePending: v.number(),
+    queueSent: v.number(),
+    queueError: v.number(),
+    cooloffActive: v.boolean(),
+    cooloffUntil: v.optional(v.string()),
+    cooloffReason: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_createdAt", ["createdAt"])
+    .index("by_status", ["status"]),
+
   memories: defineTable({
     agentId: v.id("agents"),
     content: v.string(),

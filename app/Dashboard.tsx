@@ -5,17 +5,11 @@ import { api } from "../convex/_generated/api";
 import { useState, useRef, useEffect } from "react";
 import type { Id } from "../convex/_generated/dataModel";
 
-type Tab = "overview" | "agents" | "tasks" | "chat" | "content" | "twitter" | "linkedin" | "products" | "activity" | "memories" | "crons" | "logs";
+type Tab = "twitter" | "linkedin" | "activity" | "memories" | "crons" | "logs";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: "overview", label: "Overview", icon: "📊" },
-  { id: "agents", label: "Agents", icon: "🤖" },
-  { id: "tasks", label: "Tasks", icon: "📋" },
-  { id: "chat", label: "Chat", icon: "💬" },
-  { id: "content", label: "Content", icon: "✍️" },
   { id: "twitter", label: "Twitter", icon: "🐦" },
   { id: "linkedin", label: "LinkedIn", icon: "💼" },
-  { id: "products", label: "Products", icon: "🚀" },
   { id: "activity", label: "Activity", icon: "⚡" },
   { id: "memories", label: "Memories", icon: "🧠" },
   { id: "crons", label: "Crons", icon: "🕐" },
@@ -57,6 +51,31 @@ function HighlightMentions({ text }: { text: string }) {
         )
       )}
     </>
+  );
+}
+
+// ─── StatusCard + RateBar ────────────────────────────────────────────
+
+function StatusCard({ label, value, color, sub }: { label: string; value: string | number; color?: string; sub?: string }) {
+  return (
+    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+      <div className="text-xs text-[var(--text-secondary)] mb-1">{label}</div>
+      <div className="text-xl font-bold" style={{ color: color || "var(--text-primary)" }}>{value}</div>
+      {sub && <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function RateBar({ label, current, max, color }: { label: string; current: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.min((current / max) * 100, 100) : 0;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs w-16 text-[var(--text-secondary)]">{label}</span>
+      <div className="flex-1 bg-[var(--bg-primary)] rounded-full h-2">
+        <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+      </div>
+      <span className="text-xs text-[var(--text-secondary)] w-12 text-right">{current}/{max}</span>
+    </div>
   );
 }
 
@@ -1049,8 +1068,9 @@ function ChatTab() {
 
 // ─── Content Tab ────────────────────────────────────────────────────
 
-function ContentQueue() {
-  const content = useQuery(api.content.list, { limit: 50 });
+function ContentQueue({ platformFilter }: { platformFilter?: "twitter" | "linkedin" } = {}) {
+  const allContent = useQuery(api.content.list, { limit: 50 });
+  const content = platformFilter ? (allContent ?? []).filter((c) => c.platform === platformFilter || c.platform === "all") : allContent;
   const agents = useQuery(api.agents.list);
   const approve = useMutation(api.content.approve);
   const publish = useMutation(api.content.publish);
@@ -1063,15 +1083,16 @@ function ContentQueue() {
   const [feedbackInputId, setFeedbackInputId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
 
-  if (!content || !agents) return <div className="text-[var(--text-secondary)]">Loading content...</div>;
+  if (!allContent || !agents) return <div className="text-[var(--text-secondary)]">Loading content...</div>;
 
   const agentMap = new Map(agents.map((a) => [a._id, a]));
   const statuses = ["all", "draft", "approved", "ready", "published", "rejected"] as const;
-  const filtered = filter === "all" ? content : content.filter((c) => c.status === filter);
+  const items = content ?? [];
+  const filtered = filter === "all" ? items : items.filter((c) => c.status === filter);
 
   const counts: Record<string, number> = {};
   for (const s of statuses) {
-    counts[s] = s === "all" ? content.length : content.filter((c) => c.status === s).length;
+    counts[s] = s === "all" ? items.length : items.filter((c) => c.status === s).length;
   }
 
   const statusStyle: Record<string, { color: string; bg: string }> = {
@@ -1672,33 +1693,26 @@ function TwitterTrainingTab() {
   const drafts = useQuery(api.twitterTraining.listDrafts, {});
   const feedback = useQuery(api.twitterTraining.getAllFeedback, {});
   const stats = useQuery(api.twitterTraining.getStats);
+  const healthLatest = useQuery(api.twitterHealth.latest, {});
+  const healthHistory = useQuery(api.twitterHealth.history, { limit: 20 });
+  const memories = useQuery(api.memories.listByCategory, { category: "lesson", limit: 100 });
   const createDraft = useMutation(api.twitterTraining.createDraft);
   const updateContent = useMutation(api.twitterTraining.updateDraftContent);
   const approveDraft = useMutation(api.twitterTraining.approveDraft);
   const rejectDraft = useMutation(api.twitterTraining.rejectDraft);
   const submitFeedback = useMutation(api.twitterTraining.submitFeedback);
   const deleteDraft = useMutation(api.twitterTraining.deleteDraft);
+  const createMemory = useMutation(api.memories.create);
 
   const [filter, setFilter] = useState<string>("all");
-  const [view, setView] = useState<"review" | "history" | "stats">("review");
+  const [view, setView] = useState<"health" | "drafts" | "content" | "lessons" | "history" | "stats">("health");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [feedbackText, setFeedbackText] = useState<Record<string, string>>({});
   const [feedbackCategory, setFeedbackCategory] = useState<Record<string, FeedbackCategory>>({});
   const [newDraftText, setNewDraftText] = useState("");
   const [showNewDraft, setShowNewDraft] = useState(false);
-
-  if (!drafts || !feedback || !stats) {
-    return <div className="text-[var(--text-secondary)]">Loading Twitter training...</div>;
-  }
-
-  const statuses = ["all", "draft", "approved", "rejected", "posted"] as const;
-  const filtered = filter === "all" ? drafts : drafts.filter((d) => d.status === filter);
-
-  const counts: Record<string, number> = {};
-  for (const s of statuses) {
-    counts[s] = s === "all" ? drafts.length : drafts.filter((d) => d.status === s).length;
-  }
+  const [newLessonText, setNewLessonText] = useState("");
 
   const statusStyle: Record<string, { color: string; bg: string; label: string }> = {
     draft: { color: "var(--accent-yellow)", bg: "rgba(255,170,34,0.12)", label: "Draft" },
@@ -1715,17 +1729,13 @@ function TwitterTrainingTab() {
   };
 
   const handleApprove = async (id: Id<"twitter_drafts">, fb: string, cat: FeedbackCategory) => {
-    if (fb.trim()) {
-      await submitFeedback({ draftId: id, feedback: fb.trim(), category: cat });
-    }
+    if (fb.trim()) await submitFeedback({ draftId: id, feedback: fb.trim(), category: cat });
     await approveDraft({ id });
     setFeedbackText((prev) => ({ ...prev, [id]: "" }));
   };
 
   const handleReject = async (id: Id<"twitter_drafts">, fb: string, cat: FeedbackCategory) => {
-    if (fb.trim()) {
-      await submitFeedback({ draftId: id, feedback: fb.trim(), category: cat });
-    }
+    if (fb.trim()) await submitFeedback({ draftId: id, feedback: fb.trim(), category: cat });
     await rejectDraft({ id });
     setFeedbackText((prev) => ({ ...prev, [id]: "" }));
   };
@@ -1737,9 +1747,7 @@ function TwitterTrainingTab() {
   };
 
   const handleSaveEdit = async (id: Id<"twitter_drafts">) => {
-    if (editText.trim()) {
-      await updateContent({ id, content: editText.trim() });
-    }
+    if (editText.trim()) await updateContent({ id, content: editText.trim() });
     setEditingId(null);
   };
 
@@ -1750,233 +1758,338 @@ function TwitterTrainingTab() {
     setShowNewDraft(false);
   };
 
+  const handleAddLesson = async () => {
+    if (!newLessonText.trim()) return;
+    // Use marvis agent ID
+    const agents = healthLatest ? undefined : undefined; // we need an agent ID
+    // We'll use the first agent ID from memories if available
+    const agentId = memories?.[0]?.agentId;
+    if (!agentId) return;
+    await createMemory({ agentId, content: newLessonText.trim(), category: "lesson", importance: "high" });
+    setNewLessonText("");
+  };
+
+  // Filter lessons to twitter-related ones
+  const twitterKeywords = ["twitter", "cookie", "pipeline", "automation", "shadowban", "tweet", "rt ", "retweet", "reply", "cdp", "puppeteer", "x.com", "cooloff", "cool-off", "error 226", "rnet"];
+  const twitterLessons = memories?.filter((m) => {
+    const lower = m.content.toLowerCase();
+    return twitterKeywords.some((kw) => lower.includes(kw));
+  }) ?? [];
+
+  const subViews = [
+    { id: "health" as const, label: "Health" },
+    { id: "drafts" as const, label: "Drafts" },
+    { id: "content" as const, label: "Content" },
+    { id: "lessons" as const, label: "Lessons" },
+    { id: "history" as const, label: "History" },
+    { id: "stats" as const, label: "Stats" },
+  ];
+
+  const h = healthLatest;
+  const statusColors: Record<string, string> = {
+    healthy: "var(--accent-green)",
+    degraded: "var(--accent-yellow)",
+    banned: "var(--accent-red)",
+  };
+
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold">Twitter Training</h2>
-          {counts.draft > 0 && (
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: "var(--accent-yellow)", background: "rgba(255,170,34,0.12)" }}>
-              {counts.draft} to review
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {(["review", "history", "stats"] as const).map((v) => (
-            <button key={v} onClick={() => setView(v)}
+        <h2 className="text-lg font-semibold">Twitter Hub</h2>
+        <div className="flex items-center gap-1">
+          {subViews.map((sv) => (
+            <button key={sv.id} onClick={() => setView(sv.id)}
               className={`px-3 py-1 text-xs rounded-lg border transition-colors ${
-                view === v ? "bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white"
+                view === sv.id ? "bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white"
                   : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
               }`}
             >
-              {v === "review" ? "Review" : v === "history" ? "History" : "Stats"}
+              {sv.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* ── Review View ── */}
-      {view === "review" && (
-        <div>
-          {/* Filter bar */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex gap-1">
-              {statuses.map((s) => (
-                <button key={s} onClick={() => setFilter(s)}
-                  className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
-                    filter === s ? "bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white"
-                      : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
-                  }`}
-                >
-                  {s === "all" ? `All (${counts.all})` : `${s} (${counts[s] || 0})`}
-                </button>
-              ))}
+      {/* ── Health View ── */}
+      {view === "health" && (
+        <div className="space-y-4">
+          {!h ? (
+            <div className="text-center py-12 text-[var(--text-secondary)]">
+              <div className="text-2xl mb-2">📡</div>
+              <div className="text-sm">No health data yet</div>
+              <div className="text-xs mt-1">Run <code className="bg-[var(--bg-primary)] px-1 rounded">convex-sync.sh twitter-health</code> or wait for next pipeline run</div>
             </div>
-            <button onClick={() => setShowNewDraft(!showNewDraft)}
-              className="px-3 py-1 text-xs rounded-lg font-medium transition-colors"
-              style={{ background: "rgba(68,102,255,0.15)", color: "var(--accent-blue)" }}
-            >
-              + New Draft
-            </button>
-          </div>
+          ) : (
+            <>
+              {/* Cooloff banner */}
+              {h.cooloffActive && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-semibold text-red-400">COOL-OFF ACTIVE</span>
+                  </div>
+                  <div className="text-xs text-[var(--text-secondary)]">
+                    Pipeline paused until {h.cooloffUntil ? new Date(h.cooloffUntil).toLocaleString() : "unknown"}.
+                    {h.cooloffReason && <span className="block mt-1">Reason: {h.cooloffReason}</span>}
+                  </div>
+                </div>
+              )}
 
-          {/* New draft input */}
-          {showNewDraft && (
-            <div className="bg-[var(--bg-card)] border border-[var(--accent-blue)] rounded-lg p-4 mb-3">
-              <textarea
-                value={newDraftText}
-                onChange={(e) => setNewDraftText(e.target.value)}
-                placeholder="Write a draft tweet..."
-                className="w-full bg-transparent text-sm resize-none outline-none min-h-[80px] placeholder:text-[var(--text-secondary)]"
-                maxLength={280}
-              />
-              <div className="flex items-center justify-between mt-2">
-                <span className={`text-xs ${newDraftText.length > 260 ? "text-[var(--accent-red)]" : "text-[var(--text-secondary)]"}`}>
-                  {newDraftText.length}/280
-                </span>
-                <div className="flex gap-2">
-                  <button onClick={() => { setShowNewDraft(false); setNewDraftText(""); }}
-                    className="px-3 py-1 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-red)] transition-colors">
-                    Cancel
-                  </button>
-                  <button onClick={handleCreateDraft}
-                    disabled={!newDraftText.trim()}
-                    className="px-3 py-1 text-xs rounded-lg font-medium transition-colors disabled:opacity-40"
-                    style={{ background: "rgba(68,102,255,0.15)", color: "var(--accent-blue)" }}>
-                    Add Draft
-                  </button>
+              {/* Status cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <StatusCard label="Account Status" value={h.status.toUpperCase()} color={statusColors[h.status]} />
+                <StatusCard label="Followers" value={h.followers} sub={`Following: ${h.following}`} />
+                <StatusCard label="Avg Views" value={h.avgViews} color={h.avgViews < h.followers * 0.3 && h.followers > 10 ? "var(--accent-red)" : "var(--text-primary)"} sub={`${h.zeroViewTweets} zero-view tweets`} />
+                <StatusCard label="Cookie Age" value={`${h.cookieAgeDays}d`} color={h.cookieAgeDays > 5 ? "var(--accent-red)" : h.cookieAgeDays > 3 ? "var(--accent-yellow)" : "var(--accent-green)"} sub={h.searchVisible ? "Search visible" : "SEARCH BLOCKED"} />
+              </div>
+
+              {/* Issues */}
+              {h.issues.length > 0 && (
+                <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+                  <h4 className="text-sm font-semibold mb-2 text-[var(--accent-red)]">Issues Detected</h4>
+                  <div className="space-y-1">
+                    {h.issues.map((issue, i) => (
+                      <div key={i} className="text-xs text-[var(--text-secondary)] flex items-start gap-2">
+                        <span className="text-[var(--accent-red)] mt-0.5">&#x2022;</span>
+                        <span>{issue}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Rate limits */}
+              <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+                <h4 className="text-sm font-semibold mb-3">Daily Rate Limits</h4>
+                <div className="space-y-2">
+                  <RateBar label="Replies" current={h.dailyReplies} max={10} color="var(--accent-blue)" />
+                  <RateBar label="Likes" current={h.dailyLikes} max={20} color="var(--accent-green)" />
+                  <RateBar label="RTs" current={h.dailyRetweets} max={5} color="var(--accent-purple)" />
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Draft cards */}
-          <div className="space-y-3">
-            {filtered.map((draft) => {
-              const style = statusStyle[draft.status] || statusStyle.draft;
-              const isEditing = editingId === draft._id;
-              const fb = feedbackText[draft._id] || "";
-              const cat = feedbackCategory[draft._id] || "general";
+              {/* Queue status */}
+              <div className="grid grid-cols-3 gap-3">
+                <StatusCard label="Queue Pending" value={h.queuePending} color="var(--accent-yellow)" />
+                <StatusCard label="Queue Sent" value={h.queueSent} color="var(--accent-green)" />
+                <StatusCard label="Queue Errors" value={h.queueError} color={h.queueError > 0 ? "var(--accent-red)" : "var(--text-secondary)"} />
+              </div>
 
-              return (
-                <div key={draft._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4 hover:border-[var(--accent-blue)]/30 transition-colors">
-                  {/* Status + time */}
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: style.color, background: style.bg }}>
-                      {style.label}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {draft.suggestedTime && (
-                        <span className="text-[10px] text-[var(--text-secondary)]">{draft.suggestedTime}</span>
-                      )}
-                      <TimeAgo timestamp={draft.createdAt} />
-                    </div>
-                  </div>
-
-                  {/* Tweet content — editable */}
-                  {isEditing ? (
-                    <div className="mb-3">
-                      <textarea
-                        value={editText}
-                        onChange={(e) => setEditText(e.target.value)}
-                        className="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-sm resize-none outline-none focus:border-[var(--accent-blue)] min-h-[80px]"
-                        maxLength={280}
-                      />
-                      <div className="flex items-center justify-between mt-1.5">
-                        <span className={`text-xs ${editText.length > 260 ? "text-[var(--accent-red)]" : "text-[var(--text-secondary)]"}`}>
-                          {editText.length}/280
+              {/* Snapshot history */}
+              {healthHistory && healthHistory.length > 1 && (
+                <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+                  <h4 className="text-sm font-semibold mb-3">Recent Snapshots</h4>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {healthHistory.map((snap) => (
+                      <div key={snap._id} className="flex items-center gap-3 text-xs py-1 border-b border-[var(--border)] last:border-0">
+                        <span className="font-medium px-1.5 py-0.5 rounded-full text-[10px]"
+                          style={{ color: statusColors[snap.status], background: snap.status === "healthy" ? "rgba(34,204,136,0.12)" : snap.status === "degraded" ? "rgba(255,170,34,0.12)" : "rgba(255,68,68,0.12)" }}>
+                          {snap.status}
                         </span>
-                        <div className="flex gap-2">
-                          <button onClick={() => setEditingId(null)}
-                            className="px-2 py-0.5 text-xs rounded border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                            Cancel
-                          </button>
-                          <button onClick={() => handleSaveEdit(draft._id as Id<"twitter_drafts">)}
-                            className="px-2 py-0.5 text-xs rounded font-medium transition-colors"
-                            style={{ background: "rgba(34,204,136,0.15)", color: "var(--accent-green)" }}>
-                            Save
-                          </button>
-                        </div>
+                        <span className="text-[var(--text-secondary)]">{snap.followers}f</span>
+                        <span className="text-[var(--text-secondary)]">{snap.avgViews}v</span>
+                        <span className="text-[var(--text-secondary)]">{snap.dailyLikes}L {snap.dailyRetweets}RT {snap.dailyReplies}R</span>
+                        <span className="flex-1" />
+                        <span className="text-[var(--text-secondary)] text-[10px]">{new Date(snap.createdAt).toLocaleString()}</span>
                       </div>
-                    </div>
-                  ) : (
-                    <div
-                      className="text-sm leading-relaxed whitespace-pre-wrap mb-3 cursor-pointer hover:bg-[var(--bg-hover)] rounded-lg p-2 -mx-2 transition-colors"
-                      onClick={() => { setEditingId(draft._id); setEditText(draft.content); }}
-                      title="Click to edit"
-                    >
-                      {draft.content}
-                    </div>
-                  )}
-
-                  {/* Character count bar */}
-                  <div className="mb-3">
-                    <div className="w-full bg-[var(--bg-primary)] rounded-full h-1">
-                      <div
-                        className="h-1 rounded-full transition-all"
-                        style={{
-                          width: `${Math.min((draft.content.length / 280) * 100, 100)}%`,
-                          background: draft.content.length > 260 ? "var(--accent-red)" : draft.content.length > 200 ? "var(--accent-yellow)" : "var(--accent-green)",
-                        }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-[var(--text-secondary)] mt-0.5 block">{draft.content.length}/280 chars</span>
+                    ))}
                   </div>
+                </div>
+              )}
 
-                  {/* Feedback box — only for actionable drafts */}
-                  {draft.status === "draft" && (
-                    <div className="border-t border-[var(--border)] pt-3">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="text-xs text-[var(--text-secondary)]">Feedback:</span>
-                        {(["tone", "content", "structure", "general"] as FeedbackCategory[]).map((c) => (
-                          <button key={c} onClick={() => setFeedbackCategory((prev) => ({ ...prev, [draft._id]: c }))}
-                            className={`px-1.5 py-0.5 text-[10px] rounded-full border transition-colors ${
-                              cat === c
-                                ? "border-transparent font-medium"
-                                : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
-                            }`}
-                            style={cat === c ? { color: categoryColors[c].color, background: categoryColors[c].bg } : {}}
-                          >
-                            {c}
-                          </button>
-                        ))}
-                      </div>
-                      <textarea
-                        value={fb}
-                        onChange={(e) => setFeedbackText((prev) => ({ ...prev, [draft._id]: e.target.value }))}
-                        placeholder="&quot;too formal&quot;, &quot;add more edge&quot;, &quot;this is perfect because...&quot;"
-                        className="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-2.5 text-xs resize-none outline-none focus:border-[var(--accent-blue)] min-h-[50px] placeholder:text-[var(--text-secondary)]"
-                      />
+              {/* Last updated */}
+              <div className="text-[10px] text-[var(--text-secondary)] text-right">
+                Last updated: {new Date(h.createdAt).toLocaleString()}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
-                      {/* Action buttons */}
-                      <div className="flex items-center justify-between mt-2">
-                        <button onClick={() => handleSubmitFeedbackOnly(draft._id as Id<"twitter_drafts">, fb, cat)}
-                          disabled={!fb.trim()}
-                          className="px-3 py-1 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)] transition-colors disabled:opacity-30">
-                          Save Feedback Only
-                        </button>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => handleReject(draft._id as Id<"twitter_drafts">, fb, cat)}
-                            className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors"
-                            style={{ background: "rgba(255,68,102,0.12)", color: "var(--accent-red)" }}>
-                            Reject
-                          </button>
-                          <button onClick={() => handleApprove(draft._id as Id<"twitter_drafts">, fb, cat)}
-                            className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors"
-                            style={{ background: "rgba(34,204,136,0.12)", color: "var(--accent-green)" }}>
-                            Approve
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+      {/* ── Drafts View ── */}
+      {view === "drafts" && (
+        <div>
+          {!drafts || !stats ? (
+            <div className="text-[var(--text-secondary)]">Loading drafts...</div>
+          ) : (() => {
+            const statuses = ["all", "draft", "approved", "rejected", "posted"] as const;
+            const filtered = filter === "all" ? drafts : drafts.filter((d) => d.status === filter);
+            const counts: Record<string, number> = {};
+            for (const s of statuses) {
+              counts[s] = s === "all" ? drafts.length : drafts.filter((d) => d.status === s).length;
+            }
 
-                  {/* Show existing feedback if present */}
-                  {draft.feedback && (
-                    <div className="mt-2 p-2 bg-[var(--bg-primary)] rounded-lg border border-[var(--border)]">
-                      <span className="text-[10px] text-[var(--text-secondary)] block mb-0.5">Last feedback:</span>
-                      <span className="text-xs text-[var(--text-primary)]">{draft.feedback}</span>
-                    </div>
-                  )}
-
-                  {/* Delete for non-draft */}
-                  {draft.status !== "draft" && (
-                    <div className="flex justify-end mt-2">
-                      <button onClick={() => deleteDraft({ id: draft._id as Id<"twitter_drafts"> })}
-                        className="px-2 py-0.5 text-[10px] rounded border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-red)] hover:text-[var(--accent-red)] transition-colors">
-                        Delete
+            return (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex gap-1">
+                    {statuses.map((s) => (
+                      <button key={s} onClick={() => setFilter(s)}
+                        className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                          filter === s ? "bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white"
+                            : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"
+                        }`}
+                      >
+                        {s === "all" ? `All (${counts.all})` : `${s} (${counts[s] || 0})`}
                       </button>
+                    ))}
+                  </div>
+                  <button onClick={() => setShowNewDraft(!showNewDraft)}
+                    className="px-3 py-1 text-xs rounded-lg font-medium transition-colors"
+                    style={{ background: "rgba(68,102,255,0.15)", color: "var(--accent-blue)" }}>
+                    + New Draft
+                  </button>
+                </div>
+
+                {showNewDraft && (
+                  <div className="bg-[var(--bg-card)] border border-[var(--accent-blue)] rounded-lg p-4 mb-3">
+                    <textarea value={newDraftText} onChange={(e) => setNewDraftText(e.target.value)}
+                      placeholder="Write a draft tweet..." className="w-full bg-transparent text-sm resize-none outline-none min-h-[80px] placeholder:text-[var(--text-secondary)]" maxLength={280} />
+                    <div className="flex items-center justify-between mt-2">
+                      <span className={`text-xs ${newDraftText.length > 260 ? "text-[var(--accent-red)]" : "text-[var(--text-secondary)]"}`}>{newDraftText.length}/280</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setShowNewDraft(false); setNewDraftText(""); }}
+                          className="px-3 py-1 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-red)] transition-colors">Cancel</button>
+                        <button onClick={handleCreateDraft} disabled={!newDraftText.trim()}
+                          className="px-3 py-1 text-xs rounded-lg font-medium transition-colors disabled:opacity-40"
+                          style={{ background: "rgba(68,102,255,0.15)", color: "var(--accent-blue)" }}>Add Draft</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {filtered.map((draft) => {
+                    const style = statusStyle[draft.status] || statusStyle.draft;
+                    const isEditing = editingId === draft._id;
+                    const fb = feedbackText[draft._id] || "";
+                    const cat = feedbackCategory[draft._id] || "general";
+                    return (
+                      <div key={draft._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4 hover:border-[var(--accent-blue)]/30 transition-colors">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: style.color, background: style.bg }}>{style.label}</span>
+                          <div className="flex items-center gap-2">
+                            {draft.suggestedTime && <span className="text-[10px] text-[var(--text-secondary)]">{draft.suggestedTime}</span>}
+                            <TimeAgo timestamp={draft.createdAt} />
+                          </div>
+                        </div>
+                        {isEditing ? (
+                          <div className="mb-3">
+                            <textarea value={editText} onChange={(e) => setEditText(e.target.value)}
+                              className="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-sm resize-none outline-none focus:border-[var(--accent-blue)] min-h-[80px]" maxLength={280} />
+                            <div className="flex items-center justify-between mt-1.5">
+                              <span className={`text-xs ${editText.length > 260 ? "text-[var(--accent-red)]" : "text-[var(--text-secondary)]"}`}>{editText.length}/280</span>
+                              <div className="flex gap-2">
+                                <button onClick={() => setEditingId(null)} className="px-2 py-0.5 text-xs rounded border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">Cancel</button>
+                                <button onClick={() => handleSaveEdit(draft._id as Id<"twitter_drafts">)} className="px-2 py-0.5 text-xs rounded font-medium transition-colors" style={{ background: "rgba(34,204,136,0.15)", color: "var(--accent-green)" }}>Save</button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap mb-3 cursor-pointer hover:bg-[var(--bg-hover)] rounded-lg p-2 -mx-2 transition-colors"
+                            onClick={() => { setEditingId(draft._id); setEditText(draft.content); }} title="Click to edit">
+                            {draft.content}
+                          </div>
+                        )}
+                        <div className="mb-3">
+                          <div className="w-full bg-[var(--bg-primary)] rounded-full h-1">
+                            <div className="h-1 rounded-full transition-all" style={{
+                              width: `${Math.min((draft.content.length / 280) * 100, 100)}%`,
+                              background: draft.content.length > 260 ? "var(--accent-red)" : draft.content.length > 200 ? "var(--accent-yellow)" : "var(--accent-green)",
+                            }} />
+                          </div>
+                          <span className="text-[10px] text-[var(--text-secondary)] mt-0.5 block">{draft.content.length}/280 chars</span>
+                        </div>
+                        {draft.status === "draft" && (
+                          <div className="border-t border-[var(--border)] pt-3">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <span className="text-xs text-[var(--text-secondary)]">Feedback:</span>
+                              {(["tone", "content", "structure", "general"] as FeedbackCategory[]).map((c) => (
+                                <button key={c} onClick={() => setFeedbackCategory((prev) => ({ ...prev, [draft._id]: c }))}
+                                  className={`px-1.5 py-0.5 text-[10px] rounded-full border transition-colors ${cat === c ? "border-transparent font-medium" : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)]"}`}
+                                  style={cat === c ? { color: categoryColors[c].color, background: categoryColors[c].bg } : {}}>{c}</button>
+                              ))}
+                            </div>
+                            <textarea value={fb} onChange={(e) => setFeedbackText((prev) => ({ ...prev, [draft._id]: e.target.value }))}
+                              placeholder="&quot;too formal&quot;, &quot;add more edge&quot;, &quot;this is perfect because...&quot;"
+                              className="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-2.5 text-xs resize-none outline-none focus:border-[var(--accent-blue)] min-h-[50px] placeholder:text-[var(--text-secondary)]" />
+                            <div className="flex items-center justify-between mt-2">
+                              <button onClick={() => handleSubmitFeedbackOnly(draft._id as Id<"twitter_drafts">, fb, cat)} disabled={!fb.trim()}
+                                className="px-3 py-1 text-xs rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)] transition-colors disabled:opacity-30">Save Feedback Only</button>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => handleReject(draft._id as Id<"twitter_drafts">, fb, cat)}
+                                  className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors" style={{ background: "rgba(255,68,102,0.12)", color: "var(--accent-red)" }}>Reject</button>
+                                <button onClick={() => handleApprove(draft._id as Id<"twitter_drafts">, fb, cat)}
+                                  className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors" style={{ background: "rgba(34,204,136,0.12)", color: "var(--accent-green)" }}>Approve</button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {draft.feedback && (
+                          <div className="mt-2 p-2 bg-[var(--bg-primary)] rounded-lg border border-[var(--border)]">
+                            <span className="text-[10px] text-[var(--text-secondary)] block mb-0.5">Last feedback:</span>
+                            <span className="text-xs text-[var(--text-primary)]">{draft.feedback}</span>
+                          </div>
+                        )}
+                        {draft.status !== "draft" && (
+                          <div className="flex justify-end mt-2">
+                            <button onClick={() => deleteDraft({ id: draft._id as Id<"twitter_drafts"> })}
+                              className="px-2 py-0.5 text-[10px] rounded border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent-red)] hover:text-[var(--accent-red)] transition-colors">Delete</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {filtered.length === 0 && (
+                    <div className="text-center py-12 text-[var(--text-secondary)]">
+                      <div className="text-2xl mb-2">🐦</div>
+                      <div className="text-sm">No tweets in this view</div>
+                      <div className="text-xs mt-1">Create a draft or wait for Flint to generate some</div>
                     </div>
                   )}
                 </div>
-              );
-            })}
-            {filtered.length === 0 && (
-              <div className="text-center py-12 text-[var(--text-secondary)]">
-                <div className="text-2xl mb-2">🐦</div>
-                <div className="text-sm">No tweets in this view</div>
-                <div className="text-xs mt-1">Create a draft or wait for Flint to generate some</div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ── Content View ── */}
+      {view === "content" && <ContentQueue platformFilter="twitter" />}
+
+      {/* ── Lessons View ── */}
+      {view === "lessons" && (
+        <div className="space-y-4">
+          <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+            <h4 className="text-sm font-semibold mb-2">Add New Lesson</h4>
+            <textarea value={newLessonText} onChange={(e) => setNewLessonText(e.target.value)}
+              placeholder="What did we learn? Document mistakes, decisions, and insights..."
+              className="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg p-3 text-sm resize-none outline-none focus:border-[var(--accent-blue)] min-h-[60px] placeholder:text-[var(--text-secondary)]" />
+            <div className="flex justify-end mt-2">
+              <button onClick={handleAddLesson} disabled={!newLessonText.trim() || !memories?.[0]?.agentId}
+                className="px-3 py-1.5 text-xs rounded-lg font-medium transition-colors disabled:opacity-40"
+                style={{ background: "rgba(68,102,255,0.15)", color: "var(--accent-blue)" }}>Add Lesson</button>
+            </div>
+          </div>
+
+          <div className="text-xs text-[var(--text-secondary)] mb-2">{twitterLessons.length} twitter-related lessons</div>
+          <div className="space-y-2">
+            {twitterLessons.map((lesson) => (
+              <div key={lesson._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                    style={{ color: lesson.importance === "critical" ? "var(--accent-red)" : lesson.importance === "high" ? "var(--accent-yellow)" : "var(--accent-blue)",
+                      background: lesson.importance === "critical" ? "rgba(255,68,68,0.12)" : lesson.importance === "high" ? "rgba(255,170,34,0.12)" : "rgba(68,102,255,0.12)" }}>
+                    {lesson.importance}
+                  </span>
+                  <TimeAgo timestamp={lesson.createdAt} />
+                </div>
+                <div className="text-sm leading-relaxed text-[var(--text-primary)]">{lesson.content}</div>
+              </div>
+            ))}
+            {twitterLessons.length === 0 && (
+              <div className="text-center py-8 text-[var(--text-secondary)]">
+                <div className="text-sm">No twitter-related lessons found</div>
               </div>
             )}
           </div>
@@ -1986,29 +2099,33 @@ function TwitterTrainingTab() {
       {/* ── History View ── */}
       {view === "history" && (
         <div>
-          <h3 className="text-sm font-semibold mb-3">Training History ({feedback.length} entries)</h3>
-          {feedback.length === 0 ? (
-            <div className="text-center py-12 text-[var(--text-secondary)]">
-              <div className="text-sm">No feedback yet</div>
-              <div className="text-xs mt-1">Review some tweets to start building Flint&apos;s style guide</div>
-            </div>
+          {!feedback ? (
+            <div className="text-[var(--text-secondary)]">Loading...</div>
           ) : (
-            <div className="space-y-2">
-              {feedback.map((f) => {
-                const catStyle = categoryColors[f.category] || categoryColors.general;
-                return (
-                  <div key={f._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ color: catStyle.color, background: catStyle.bg }}>
-                        {f.category}
-                      </span>
-                      <TimeAgo timestamp={f.createdAt} />
-                    </div>
-                    <div className="text-sm text-[var(--text-primary)]">{f.feedback}</div>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <h3 className="text-sm font-semibold mb-3">Training History ({feedback.length} entries)</h3>
+              {feedback.length === 0 ? (
+                <div className="text-center py-12 text-[var(--text-secondary)]">
+                  <div className="text-sm">No feedback yet</div>
+                  <div className="text-xs mt-1">Review some tweets to start building Flint&apos;s style guide</div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {feedback.map((f) => {
+                    const catStyle = categoryColors[f.category] || categoryColors.general;
+                    return (
+                      <div key={f._id} className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ color: catStyle.color, background: catStyle.bg }}>{f.category}</span>
+                          <TimeAgo timestamp={f.createdAt} />
+                        </div>
+                        <div className="text-sm text-[var(--text-primary)]">{f.feedback}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -2016,66 +2133,52 @@ function TwitterTrainingTab() {
       {/* ── Stats View ── */}
       {view === "stats" && (
         <div className="space-y-4">
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-[var(--text-primary)]">{stats.total}</div>
-              <div className="text-xs text-[var(--text-secondary)] mt-1">Total Drafts</div>
-            </div>
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-[var(--accent-green)]">{stats.approvalRate}%</div>
-              <div className="text-xs text-[var(--text-secondary)] mt-1">Approval Rate</div>
-            </div>
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-[var(--accent-blue)]">{stats.totalFeedback}</div>
-              <div className="text-xs text-[var(--text-secondary)] mt-1">Feedback Given</div>
-            </div>
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-[var(--accent-yellow)]">{stats.pending}</div>
-              <div className="text-xs text-[var(--text-secondary)] mt-1">Pending Review</div>
-            </div>
-          </div>
-
-          {/* Breakdown */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* Status breakdown */}
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
-              <h4 className="text-sm font-semibold mb-3">Draft Status Breakdown</h4>
-              <div className="space-y-2">
-                {([["approved", stats.approved, "var(--accent-green)"], ["rejected", stats.rejected, "var(--accent-red)"], ["pending", stats.pending, "var(--accent-yellow)"]] as [string, number, string][]).map(([label, count, color]) => (
-                  <div key={label} className="flex items-center gap-2">
-                    <span className="text-xs w-16 text-[var(--text-secondary)] capitalize">{label}</span>
-                    <div className="flex-1 bg-[var(--bg-primary)] rounded-full h-2">
-                      <div className="h-2 rounded-full transition-all" style={{ width: stats.total > 0 ? `${(count / stats.total) * 100}%` : "0%", background: color }} />
-                    </div>
-                    <span className="text-xs text-[var(--text-secondary)] w-6 text-right">{count}</span>
-                  </div>
-                ))}
+          {!stats ? (
+            <div className="text-[var(--text-secondary)]">Loading stats...</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <StatusCard label="Total Drafts" value={stats.total} />
+                <StatusCard label="Approval Rate" value={`${stats.approvalRate}%`} color="var(--accent-green)" />
+                <StatusCard label="Feedback Given" value={stats.totalFeedback} color="var(--accent-blue)" />
+                <StatusCard label="Pending Review" value={stats.pending} color="var(--accent-yellow)" />
               </div>
-            </div>
-
-            {/* Feedback categories */}
-            <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
-              <h4 className="text-sm font-semibold mb-3">Feedback Categories</h4>
-              {Object.keys(stats.categoryBreakdown).length === 0 ? (
-                <div className="text-xs text-[var(--text-secondary)]">No feedback yet</div>
-              ) : (
-                <div className="space-y-2">
-                  {Object.entries(stats.categoryBreakdown).sort(([,a], [,b]) => b - a).map(([cat, count]) => {
-                    const catStyle = categoryColors[cat] || categoryColors.general;
-                    return (
-                      <div key={cat} className="flex items-center justify-between">
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: catStyle.color, background: catStyle.bg }}>
-                          {cat}
-                        </span>
-                        <span className="text-xs text-[var(--text-secondary)]">{count} entries</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+                  <h4 className="text-sm font-semibold mb-3">Draft Status Breakdown</h4>
+                  <div className="space-y-2">
+                    {([["approved", stats.approved, "var(--accent-green)"], ["rejected", stats.rejected, "var(--accent-red)"], ["pending", stats.pending, "var(--accent-yellow)"]] as [string, number, string][]).map(([label, count, color]) => (
+                      <div key={label} className="flex items-center gap-2">
+                        <span className="text-xs w-16 text-[var(--text-secondary)] capitalize">{label}</span>
+                        <div className="flex-1 bg-[var(--bg-primary)] rounded-full h-2">
+                          <div className="h-2 rounded-full transition-all" style={{ width: stats.total > 0 ? `${(count / stats.total) * 100}%` : "0%", background: color }} />
+                        </div>
+                        <span className="text-xs text-[var(--text-secondary)] w-6 text-right">{count}</span>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
+                <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-4">
+                  <h4 className="text-sm font-semibold mb-3">Feedback Categories</h4>
+                  {Object.keys(stats.categoryBreakdown).length === 0 ? (
+                    <div className="text-xs text-[var(--text-secondary)]">No feedback yet</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {Object.entries(stats.categoryBreakdown).sort(([,a], [,b]) => b - a).map(([cat, count]) => {
+                        const catStyle = categoryColors[cat] || categoryColors.general;
+                        return (
+                          <div key={cat} className="flex items-center justify-between">
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: catStyle.color, background: catStyle.bg }}>{cat}</span>
+                            <span className="text-xs text-[var(--text-secondary)]">{count} entries</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -3032,25 +3135,11 @@ function LogsTab() {
 // ─── Main Dashboard ─────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>("crons");
-  const [agentFilter, setAgentFilter] = useState<string | null>(null);
-
-  const handleAgentClick = (agentId: string) => {
-    setAgentFilter(agentId);
-    setActiveTab("tasks");
-  };
-
-  const clearAgentFilter = () => setAgentFilter(null);
+  const [activeTab, setActiveTab] = useState<Tab>("twitter");
 
   const panels: Record<Tab, React.ReactNode> = {
-    overview: <OverviewTab onAgentClick={handleAgentClick} />,
-    agents: <AgentsTab onAgentClick={handleAgentClick} />,
-    tasks: <TaskBoard agentFilter={agentFilter} onClearAgentFilter={clearAgentFilter} />,
-    chat: <ChatTab />,
-    content: <ContentQueue />,
     twitter: <TwitterTrainingTab />,
     linkedin: <LinkedInTrainingTab />,
-    products: <ProductsTab />,
     activity: <ActivityFeed />,
     memories: <MemoriesTab />,
     crons: <CronsTab />,
